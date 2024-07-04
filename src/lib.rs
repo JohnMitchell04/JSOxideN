@@ -1,12 +1,24 @@
+use core::fmt;
 use std::collections::BTreeMap;
 
 /// Number type for floats and integers.
-enum Number {
+#[derive(Debug)]
+pub enum Number {
     Int(i64),
     Float(f64),
 }
 
+impl fmt::Display for Number {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Number::Int(i) => write!(f, "{}", i),
+            Number::Float(fl) => write!(f, "{}", fl),
+        }
+    }
+}
+
 /// All possible JSON value types.
+#[derive(Debug)]
 pub enum Value {
     Null,
     Bool(bool),
@@ -16,6 +28,26 @@ pub enum Value {
     Object(BTreeMap<String, Box<Value>>)
 }
 
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Null => write!(f, "null"),
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::Number(n) => write!(f, "{}", n),
+            Value::String(s) => write!(f, "\"{}\"", s),
+            Value::Array(a) => {
+                let elements = a.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(", ");
+                write!(f, "[{}]", elements)
+            },
+            Value::Object(o) => {
+                let entries = o.iter().map(|(k, v)| format!("\"{}\": {}", k, v)).collect::<Vec<_>>().join(", ");
+                write!(f, "{{{}}}", entries)
+            },
+        }
+    }
+}
+
+#[derive(Debug)]
 pub enum ParseError {
     UnexpectedCharacter,
     UnexpectedEOF,
@@ -79,9 +111,9 @@ impl<'a> Parser<'a> {
 
     /// Eat whitespace characters.
     fn eat_whitespace(&mut self) {
-        while let Some(c) = self.consume_char() {
+        while let Some(c) = self.peek_char() {
             match c {
-                '\u{0020}' | '\u{000A}' | '\u{000D}' | '\u{0009}' => {},
+                '\u{0020}' | '\u{000A}' | '\u{000D}' | '\u{0009}' => _ = self.consume_char(),
                 _ => break,
             }
         }
@@ -218,7 +250,7 @@ impl<'a> Parser<'a> {
             None => return Err(ParseError::UnexpectedEOF),
         }
 
-        char = self.peek_char();
+        char = self.consume_char();
         unexpected_boilerplate!(char, ']', Ok(value))
     }
 
