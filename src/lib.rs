@@ -22,6 +22,11 @@ pub enum ParseError {
     InvalidHex,
     InvalidUnicode,
     InvalidInteger,
+    InvalidFraction,
+    InvalidExponent,
+    ExpectedSign,
+    NumberOutOfBounds,
+    InvalidValue,
 }
 
 macro_rules! unexpected_boilerplate {
@@ -47,7 +52,7 @@ struct Parser<'a> {
     line: usize,
 }
 
-impl<'a> Parser<'a>{
+impl<'a> Parser<'a> {
     fn new(input: &'a str) -> Parser {
         Parser {
             input,
@@ -75,8 +80,9 @@ impl<'a> Parser<'a>{
     /// Eat whitespace characters.
     fn eat_whitespace(&mut self) {
         while let Some(c) = self.consume_char() {
-            if !c.is_whitespace() {
-                break;
+            match c {
+                '\u{0020}' | '\u{000A}' | '\u{000D}' | '\u{0009}' => {},
+                _ => break,
             }
         }
     }
@@ -97,8 +103,52 @@ impl<'a> Parser<'a>{
                 let value = self.string()?;
                 Ok(Value::String(value))
             },
-            Some('t' | 'f') => self.bool(),
-            Some('n') => self.null(),
+            Some('t' | 'f') => {
+                if let Some('t') = char {
+                    let mut value = String::from("");
+                    for _ in 0..4 {
+                        match self.consume_char() {
+                            Some(c) => value.push(c),
+                            None => return Err(ParseError::UnexpectedEOF),
+                        }
+                    }
+
+                    if value == "true" {
+                        Ok(Value::Bool(true))
+                    } else {
+                        Err(ParseError::InvalidValue)
+                    }
+                } else {
+                    let mut value = String::from("");
+                    for _ in 0..5 {
+                        match self.consume_char() {
+                            Some(c) => value.push(c),
+                            None => return Err(ParseError::UnexpectedEOF),
+                        }
+                    }
+
+                    if value == "false" {
+                        Ok(Value::Bool(false))
+                    } else {
+                        Err(ParseError::InvalidValue)
+                    }
+                }
+            },
+            Some('n') => {
+                let mut value = String::from("");
+                    for _ in 0..4 {
+                        match self.consume_char() {
+                            Some(c) => value.push(c),
+                            None => return Err(ParseError::UnexpectedEOF),
+                        }
+                    }
+
+                    if value == "null" {
+                        Ok(Value::Null)
+                    } else {
+                        Err(ParseError::InvalidValue)
+                    }
+            },
             Some(_) => self.number(),
             None => Err(ParseError::UnexpectedEOF),
         }
@@ -283,11 +333,36 @@ impl<'a> Parser<'a>{
     }
 
     /// Number rule.
-    fn number(&mut self) -> Result<Number, ParseError> {
-        // TODO: Create the number
-        self.integer();
-        self.fraction();
-        self.exponent();
+    fn number(&mut self) -> Result<Value, ParseError> {
+        let int = self.integer()?;
+        let frac = self.fraction()?;
+        let exp = self.exponent()?;
+
+        match frac {
+            Some(i) => {
+                match exp {
+                    Some(j) => {
+                        Ok(Value::Number(Number::Float((int as f64 + i) * j)))
+                    },
+                    None => Ok(Value::Number(Number::Float(int as f64 + i))),
+                }
+            },
+            None => {
+                match exp {
+                    Some(i) => {
+                        if i > 0f64 {
+                            match int.checked_mul(i as i64) {
+                                Some(j) => Ok(Value::Number(Number::Int(j))),
+                                None => Ok(Value::Number(Number::Float(int as f64 * i))),
+                            }
+                        } else {
+                            Ok(Value::Number(Number::Float(int as f64 * i)))
+                        }
+                    },
+                    None => Ok(Value::Number(Number::Int(int))),
+                }
+            },
+        }
     }
 
     /// Integer rule.
@@ -298,9 +373,8 @@ impl<'a> Parser<'a>{
                 let char = self.peek_char();
                 match char {
                     Some('0'..='9') => {
-                        let chars = self.digits()?;
-                        match i64::from_str_radix(&chars, 10) {
-                            Ok(i) => Ok(i),
+                        match self.digits()?.parse::<i64>() {
+                            Ok(i) => Ok(-i),
                             Err(_) => Err(ParseError::InvalidInteger)
                         }
         
@@ -310,8 +384,7 @@ impl<'a> Parser<'a>{
                 }
             },
             Some('0'..='9') => {
-                let chars = self.digits()?;
-                match i64::from_str_radix(&chars, 10) {
+                match self.digits()?.parse::<i64>() {
                     Ok(i) => Ok(i),
                     Err(_) => Err(ParseError::InvalidInteger)
                 }
@@ -352,5 +425,37 @@ impl<'a> Parser<'a>{
     fn onenine(&mut self) -> Result<char, ParseError> {
         let char = self.consume_char();
         unexpected_boilerplate!(char, '1'..='9', Ok(char.unwrap()))
+    }
+
+    /// Fraction rule.
+    fn fraction(&mut self) ->  Result<Option<f64>, ParseError>{
+        if self.peek_char() == Some('.') {
+            _ = self.consume_char();
+            let fraction = self.digits()?;
+            match fraction.parse::<f64>() {
+                Ok(i) => {
+                    let divisor = 10f64.powi(fraction.len() as i32);
+                    return Ok(Some(i / divisor));
+                },
+                Err(_) => return Err(ParseError::InvalidFraction),
+            }
+        }
+
+        Ok(None)
+    }
+
+    /// Exponent rule.
+    fn exponent(&mut self) -> Result<Option<f64>, ParseError> {
+        match self.peek_char() {
+            Some('E' | 'e') => {
+                match self.digits()?.parse::<i32>() {
+                    Ok(i) => {
+                        Ok(Some(10f64.powi(i)))
+                    },
+                    Err(_) => Err(ParseError::InvalidExponent),
+                }
+            },
+            _ => Ok(None),
+        }
     }
 }
