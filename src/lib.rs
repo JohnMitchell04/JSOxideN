@@ -1,5 +1,5 @@
 use core::fmt;
-use std::collections::BTreeMap;
+use std::{collections::BTreeMap, error::Error};
 
 /// Number type for floats and integers.
 #[derive(Debug)]
@@ -47,6 +47,9 @@ impl fmt::Display for Value {
     }
 }
 
+// TODO: Maybe extend this to a struct with the enum but also info about the error.
+// i.e. line number and character that the error was encountered on.
+// Maybe also make them more specific, i.e. missing a bracket etc.
 #[derive(Debug)]
 pub enum ParseError {
     UnexpectedCharacter,
@@ -56,10 +59,29 @@ pub enum ParseError {
     InvalidInteger,
     InvalidFraction,
     InvalidExponent,
-    ExpectedSign,
     NumberOutOfBounds,
     InvalidValue,
+    ExpectedEOF
 }
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseError::UnexpectedCharacter => write!(f, "Unexpected character encountered"),
+            ParseError::UnexpectedEOF => write!(f, "Unexpected EOF encountered"),
+            ParseError::InvalidHex => write!(f, "Invalid hex number encountered"),
+            ParseError::InvalidUnicode => write!(f, "Invalid unicode literal encountered"),
+            ParseError::InvalidInteger => write!(f, "Could not parse integer"),
+            ParseError::InvalidFraction => write!(f, "Could not parse fractional part"),
+            ParseError::InvalidExponent => write!(f, "Could not parse exponent"),
+            ParseError::NumberOutOfBounds => write!(f, "Number cannot be stored in an double"),
+            ParseError::InvalidValue => write!(f, "Invalid bollean/null literal"),
+            ParseError::ExpectedEOF => write!(f, "Expected EOF but character encountered"),
+        }
+    }
+}
+
+impl Error for ParseError {}
 
 macro_rules! unexpected_boilerplate {
     ($v:ident, $pat:pat, $e:expr) => {
@@ -74,7 +96,14 @@ macro_rules! unexpected_boilerplate {
 /// Parse a JSON string and return a Value.
 pub fn from_str(input: &str) -> Result<Value, ParseError> {
     let mut parser = Parser::new(input);
-    return parser.parse();
+    return parser.parse()
+}
+
+/// Parse JSON from a file and return a Value.
+pub fn from_file(filepath: &str) -> Result<Value, Box<dyn Error>> {
+    let input = std::fs::read_to_string(filepath)?;
+    let mut parser = Parser::new(&input);
+    return parser.parse().map_err(|e| Box::new(e) as Box<dyn Error>)
 }
 
 /// Parser struct.
@@ -121,8 +150,11 @@ impl<'a> Parser<'a> {
 
     /// Parse the input string.
     fn parse(&mut self) -> Result<Value, ParseError> {
-        // TODO: Potentially check for EOF after this
-        return self.element();
+        let value = self.element()?;
+        match self.peek_char() {
+            None => Ok(value),
+            _ => Err(ParseError::ExpectedEOF)
+        }
     }
 
     /// Value rule.
@@ -436,6 +468,11 @@ impl<'a> Parser<'a> {
             }
 
             output.push(self.digit()?);
+        }
+
+        match output.chars().nth(0) {
+            Some('0') if output.len() > 1 => return Err(ParseError::InvalidInteger),
+            _ => {}
         }
 
         Ok(output)

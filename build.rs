@@ -32,8 +32,7 @@ fn main() {
             r#"
 #[test]
 fn test_{test_name}() {{
-    let data = std::fs::read_to_string("{path}").unwrap();
-    let value = JSOxideN::from_str(&data);
+    let value = JSOxideN::from_file("{path}");
     if {succeed} {{
         assert!(value.is_ok(), "Failed to parse {path}, expected success but got {{:?}}", value)
     }} else {{
