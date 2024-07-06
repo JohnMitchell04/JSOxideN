@@ -163,11 +163,6 @@ impl<'a> Parser<'a> {
 
     /// Value rule.
     fn value(&mut self) -> Result<Value, ParseError> {
-        self.recurse_depth += 1;
-        if self.recurse_depth > 1000 {
-            return Err(ParseError::RecursionDepthReached);
-        }
-
         let char = self.peek_char();
         match char {
             Some('{') => self.object(),
@@ -229,6 +224,11 @@ impl<'a> Parser<'a> {
 
     /// Object rule.
     fn object(&mut self) -> Result<Value, ParseError> {
+        self.recurse_depth += 1;
+        if self.recurse_depth > 1000 {
+            return Err(ParseError::RecursionDepthReached);
+        }
+
         let mut char = self.consume_char();
         unexpected_boilerplate!(char, '{', {});
 
@@ -240,6 +240,8 @@ impl<'a> Parser<'a> {
             Some(_) => value = self.members()?,
             None => return Err(ParseError::UnexpectedEOF),
         }
+
+        self.recurse_depth -= 1;
 
         char = self.consume_char();
         unexpected_boilerplate!(char, '}', Ok(value))
@@ -279,6 +281,11 @@ impl<'a> Parser<'a> {
 
     /// Array rule.
     fn array(&mut self) -> Result<Value, ParseError> {
+        self.recurse_depth += 1;
+        if self.recurse_depth > 1000 {
+            return Err(ParseError::RecursionDepthReached);
+        }
+
         let mut char = self.consume_char();
         unexpected_boilerplate!(char, '[', {});
 
@@ -290,6 +297,8 @@ impl<'a> Parser<'a> {
             Some(_) => value = self.elements()?,
             None => return Err(ParseError::UnexpectedEOF),
         }
+
+        self.recurse_depth -= 1;
 
         char = self.consume_char();
         unexpected_boilerplate!(char, ']', Ok(value))
