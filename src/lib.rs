@@ -61,7 +61,8 @@ pub enum ParseError {
     InvalidExponent,
     NumberOutOfBounds,
     InvalidValue,
-    ExpectedEOF
+    ExpectedEOF,
+    RecursionDepthReached
 }
 
 impl fmt::Display for ParseError {
@@ -77,6 +78,7 @@ impl fmt::Display for ParseError {
             ParseError::NumberOutOfBounds => write!(f, "Number cannot be stored in an double"),
             ParseError::InvalidValue => write!(f, "Invalid bollean/null literal"),
             ParseError::ExpectedEOF => write!(f, "Expected EOF but character encountered"),
+            ParseError::RecursionDepthReached => write!(f, "The maximum recursion depth was reached"),
         }
     }
 }
@@ -111,6 +113,7 @@ struct Parser<'a> {
     input: &'a str,
     pos: usize,
     line: usize,
+    recurse_depth: i16,
 }
 
 impl<'a> Parser<'a> {
@@ -119,6 +122,7 @@ impl<'a> Parser<'a> {
             input,
             pos: 0,
             line: 0,
+            recurse_depth: 0,
         }
     }
 
@@ -159,6 +163,11 @@ impl<'a> Parser<'a> {
 
     /// Value rule.
     fn value(&mut self) -> Result<Value, ParseError> {
+        self.recurse_depth += 1;
+        if self.recurse_depth > 1000 {
+            return Err(ParseError::RecursionDepthReached);
+        }
+
         let char = self.peek_char();
         match char {
             Some('{') => self.object(),
