@@ -277,7 +277,10 @@ impl<'a> Parser<'a> {
         char = self.peek_char();
         let value;
         match char {
-            Some('}') => return Ok(Value::Object(BTreeMap::new())),
+            Some('}') => {
+                _ = self.consume_char();
+                return Ok(Value::Object(BTreeMap::new()))
+            },
             Some(_) => value = self.members()?,
             None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
@@ -584,10 +587,26 @@ impl<'a> Parser<'a> {
     fn exponent(&mut self) -> Result<Option<f64>, ParseError> {
         match self.peek_char() {
             Some('E' | 'e') => {
-                let digits = self.digits()?; 
+                _ = self.consume_char();
+
+                let mut pos = true;
+                match self.peek_char() {
+                    Some('+') => _ = self.consume_char(),
+                    Some('-') => {
+                        _ = self.consume_char();
+                        pos = false
+                    },
+                    _ => {}
+                }
+
+                let digits = self.digits()?;
                 match digits.parse::<i32>() {
                     Ok(i) => {
-                        Ok(Some(10f64.powi(i)))
+                        if !pos {
+                            Ok(Some(-10f64.powi(i)))
+                        } else {
+                            Ok(Some(10f64.powi(i)))
+                        }
                     },
                     Err(_) => Err((ParseErrorType::InvalidExponent, self.line, digits).into()),
                 }
