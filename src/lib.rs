@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::BTreeMap, error::Error};
+use std::{collections::BTreeMap, error::Error, fmt::Display};
 
 /// Number type for floats and integers.
 #[derive(Debug)]
@@ -47,11 +47,8 @@ impl fmt::Display for Value {
     }
 }
 
-// TODO: Maybe extend this to a struct with the enum but also info about the error.
-// i.e. line number and character that the error was encountered on.
-// Maybe also make them more specific, i.e. missing a bracket etc.
 #[derive(Debug)]
-pub enum ParseError {
+pub enum ParseErrorType {
     UnexpectedCharacter,
     UnexpectedEOF,
     InvalidHex,
@@ -62,35 +59,79 @@ pub enum ParseError {
     NumberOutOfBounds,
     InvalidValue,
     ExpectedEOF,
-    RecursionDepthReached
+    RecursionDepthReached,
+    IOError
+}
+
+impl fmt::Display for ParseErrorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseErrorType::UnexpectedCharacter => write!(f, "Unexpected character encountered."),
+            ParseErrorType::UnexpectedEOF => write!(f, "Unexpected EOF encountered."),
+            ParseErrorType::InvalidHex => write!(f, "Invalid hex number encountered."),
+            ParseErrorType::InvalidUnicode => write!(f, "Invalid unicode literal encountered."),
+            ParseErrorType::InvalidInteger => write!(f, "Could not parse integer."),
+            ParseErrorType::InvalidFraction => write!(f, "Could not parse fractional part."),
+            ParseErrorType::InvalidExponent => write!(f, "Could not parse exponent."),
+            ParseErrorType::NumberOutOfBounds => write!(f, "Number cannot be stored in an double."),
+            ParseErrorType::InvalidValue => write!(f, "Invalid bollean/null literal."),
+            ParseErrorType::ExpectedEOF => write!(f, "Expected EOF but character encountered."),
+            ParseErrorType::RecursionDepthReached => write!(f, "The maximum recursion depth was reached."),
+            ParseErrorType::IOError => write!(f, "Couldn't read file")
+        }
+    }
+}
+
+/// TODO: Add position in line
+#[derive(Debug)]
+pub struct ParseError {
+    error_type: ParseErrorType,
+    line: usize,
+    string: Option<String>,
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            ParseError::UnexpectedCharacter => write!(f, "Unexpected character encountered"),
-            ParseError::UnexpectedEOF => write!(f, "Unexpected EOF encountered"),
-            ParseError::InvalidHex => write!(f, "Invalid hex number encountered"),
-            ParseError::InvalidUnicode => write!(f, "Invalid unicode literal encountered"),
-            ParseError::InvalidInteger => write!(f, "Could not parse integer"),
-            ParseError::InvalidFraction => write!(f, "Could not parse fractional part"),
-            ParseError::InvalidExponent => write!(f, "Could not parse exponent"),
-            ParseError::NumberOutOfBounds => write!(f, "Number cannot be stored in an double"),
-            ParseError::InvalidValue => write!(f, "Invalid bollean/null literal"),
-            ParseError::ExpectedEOF => write!(f, "Expected EOF but character encountered"),
-            ParseError::RecursionDepthReached => write!(f, "The maximum recursion depth was reached"),
+        match &self.string {
+            Some(c) => write!(f, "Error: {} On line: {}, around: {}", self.error_type, self.line, c),
+            None => write!(f, "Error: {} On line: {}, character EOF", self.error_type, self.line),
         }
     }
 }
 
 impl Error for ParseError {}
 
+impl From<(ParseErrorType, usize, Option<char>)> for ParseError {
+    fn from((error_type, line, character): (ParseErrorType, usize, Option<char>)) -> Self {
+        let string;
+        match character {
+            Some(c) => string = Some(String::from(c)),
+            None => string = None,
+        }
+        ParseError {
+            error_type,
+            line,
+            string
+        }
+    }
+}
+
+impl From<(ParseErrorType, usize, String)> for ParseError {
+    fn from((error_type, line, string): (ParseErrorType, usize, String)) -> Self {
+        ParseError {
+            error_type,
+            line,
+            string: Some(string)
+        }
+    }
+}
+
 macro_rules! unexpected_boilerplate {
-    ($v:ident, $pat:pat, $e:expr) => {
+    ($v:ident, $pat:pat, $e:expr, $l:expr) => {
         match $v {
             Some(c) if matches!(c, $pat) => $e,
-            Some(_) => return Err(ParseError::UnexpectedCharacter),
-            None => return Err(ParseError::UnexpectedEOF),
+            Some(k) => return Err((ParseErrorType::UnexpectedCharacter, $l, Some(k)).into()),
+            None => return Err((ParseErrorType::UnexpectedEOF, $l, None).into()),
         }
     };
 }
@@ -105,7 +146,7 @@ pub fn from_str(input: &str) -> Result<Value, ParseError> {
 pub fn from_file(filepath: &str) -> Result<Value, Box<dyn Error>> {
     let input = std::fs::read_to_string(filepath)?;
     let mut parser = Parser::new(&input);
-    return parser.parse().map_err(|e| Box::new(e) as Box<dyn Error>)
+    return Ok(parser.parse()?)
 }
 
 /// Parser struct.
@@ -157,7 +198,7 @@ impl<'a> Parser<'a> {
         let value = self.element()?;
         match self.peek_char() {
             None => Ok(value),
-            _ => Err(ParseError::ExpectedEOF)
+            c => Err((ParseErrorType::ExpectedEOF, self.line, c).into())
         }
     }
 
@@ -177,28 +218,28 @@ impl<'a> Parser<'a> {
                     for _ in 0..4 {
                         match self.consume_char() {
                             Some(c) => value.push(c),
-                            None => return Err(ParseError::UnexpectedEOF),
+                            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
                         }
                     }
 
                     if value == "true" {
                         Ok(Value::Bool(true))
                     } else {
-                        Err(ParseError::InvalidValue)
+                        Err((ParseErrorType::InvalidValue, self.line, value).into())
                     }
                 } else {
                     let mut value = String::from("");
                     for _ in 0..5 {
                         match self.consume_char() {
                             Some(c) => value.push(c),
-                            None => return Err(ParseError::UnexpectedEOF),
+                            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
                         }
                     }
 
                     if value == "false" {
                         Ok(Value::Bool(false))
                     } else {
-                        Err(ParseError::InvalidValue)
+                        Err((ParseErrorType::InvalidValue, self.line, value).into())
                     }
                 }
             },
@@ -207,30 +248,30 @@ impl<'a> Parser<'a> {
                     for _ in 0..4 {
                         match self.consume_char() {
                             Some(c) => value.push(c),
-                            None => return Err(ParseError::UnexpectedEOF),
+                            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
                         }
                     }
 
                     if value == "null" {
                         Ok(Value::Null)
                     } else {
-                        Err(ParseError::InvalidValue)
+                        Err((ParseErrorType::InvalidValue, self.line, value).into())
                     }
             },
             Some(_) => self.number(),
-            None => Err(ParseError::UnexpectedEOF),
+            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
     }
 
     /// Object rule.
     fn object(&mut self) -> Result<Value, ParseError> {
         self.recurse_depth += 1;
-        if self.recurse_depth > 1000 {
-            return Err(ParseError::RecursionDepthReached);
+        if self.recurse_depth > 100 {
+            return Err((ParseErrorType::RecursionDepthReached, self.line, None).into());
         }
 
         let mut char = self.consume_char();
-        unexpected_boilerplate!(char, '{', {});
+        unexpected_boilerplate!(char, '{', {}, self.line);
 
         self.eat_whitespace();
         char = self.peek_char();
@@ -238,13 +279,13 @@ impl<'a> Parser<'a> {
         match char {
             Some('}') => return Ok(Value::Object(BTreeMap::new())),
             Some(_) => value = self.members()?,
-            None => return Err(ParseError::UnexpectedEOF),
+            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
 
         self.recurse_depth -= 1;
 
         char = self.consume_char();
-        unexpected_boilerplate!(char, '}', Ok(value))
+        unexpected_boilerplate!(char, '}', Ok(value), self.line)
     }
 
     /// Members rule.
@@ -273,7 +314,7 @@ impl<'a> Parser<'a> {
         self.eat_whitespace();
 
         let char = self.consume_char();
-        unexpected_boilerplate!(char, ':', {});
+        unexpected_boilerplate!(char, ':', {}, self.line);
 
         let value = self.element()?;
         Ok((key, value))
@@ -282,26 +323,29 @@ impl<'a> Parser<'a> {
     /// Array rule.
     fn array(&mut self) -> Result<Value, ParseError> {
         self.recurse_depth += 1;
-        if self.recurse_depth > 1000 {
-            return Err(ParseError::RecursionDepthReached);
+        if self.recurse_depth > 100 {
+            return Err((ParseErrorType::RecursionDepthReached, self.line, None).into());
         }
 
         let mut char = self.consume_char();
-        unexpected_boilerplate!(char, '[', {});
+        unexpected_boilerplate!(char, '[', {}, self.line);
 
         self.eat_whitespace();
         char = self.peek_char();
         let value;
         match char {
-            Some(']') => return Ok(Value::Array(Vec::new())),
+            Some(']') => {
+                _ = self.consume_char();
+                return Ok(Value::Array(Vec::new()))
+            },
             Some(_) => value = self.elements()?,
-            None => return Err(ParseError::UnexpectedEOF),
+            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
 
         self.recurse_depth -= 1;
 
         char = self.consume_char();
-        unexpected_boilerplate!(char, ']', Ok(value))
+        unexpected_boilerplate!(char, ']', Ok(value), self.line)
     }
 
     /// Elements rule.
@@ -334,12 +378,12 @@ impl<'a> Parser<'a> {
     /// String rule.
     fn string(&mut self) -> Result<String, ParseError> {
         let mut char = self.consume_char();
-        unexpected_boilerplate!(char, '"', {});
+        unexpected_boilerplate!(char, '"', {}, self.line);
 
         let value = self.characters()?;
 
         char = self.consume_char();
-        unexpected_boilerplate!(char, '"', Ok(value))
+        unexpected_boilerplate!(char, '"', Ok(value), self.line)
     }
 
     /// Characters rule.
@@ -362,6 +406,7 @@ impl<'a> Parser<'a> {
         match char {
             Some('"') => Ok(None),
             Some('\\') => {
+                _ = self.consume_char();
                 let char = self.escape()?;
                 Ok(Some(char))
             },
@@ -369,8 +414,8 @@ impl<'a> Parser<'a> {
                 _ = self.consume_char();
                 Ok(char)
             },
-            Some(_) => Err(ParseError::UnexpectedCharacter),
-            None => Err(ParseError::UnexpectedEOF),
+            Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
+            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
     }
 
@@ -380,6 +425,7 @@ impl<'a> Parser<'a> {
         match char {
             Some('"') => Ok('"'),
             Some('\\') => Ok('\\'),
+            Some('/') => Ok('/'),
             Some('b') => Ok('\u{0008}'),
             Some('f') => Ok('\u{000C}'),
             Some('n') => Ok('\n'),
@@ -394,13 +440,13 @@ impl<'a> Parser<'a> {
                 match u32::from_str_radix(&hex_string, 16) {
                     Ok(representation) => match char::from_u32(representation) {
                         Some(c) => Ok(c),
-                        None => Err(ParseError::InvalidUnicode)
+                        None => Err((ParseErrorType::InvalidUnicode, self.line, hex_string).into())
                     }, 
-                    Err(_) => Err(ParseError::InvalidHex),
+                    Err(_) => Err((ParseErrorType::InvalidHex, self.line, hex_string).into()),
                 }
             },
-            Some(_) => Err(ParseError::UnexpectedCharacter),
-            None => Err(ParseError::UnexpectedEOF),
+            Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
+            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
     }
 
@@ -410,7 +456,7 @@ impl<'a> Parser<'a> {
         match char {
             Some('A'..='F' | 'a'..='f') => Ok(char.unwrap()),
             Some(_) => self.digit(),
-            None => Err(ParseError::UnexpectedEOF),
+            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
     }
 
@@ -455,25 +501,27 @@ impl<'a> Parser<'a> {
                 let char = self.peek_char();
                 match char {
                     Some('0'..='9') => {
-                        match self.digits()?.parse::<i64>() {
+                        let digits = self.digits()?;
+                        match digits.parse::<i64>() {
                             Ok(i) => Ok(-i),
-                            Err(_) => Err(ParseError::InvalidInteger)
+                            Err(_) => Err((ParseErrorType::InvalidInteger, self.line, digits).into())
                         }
         
                     },
-                    Some(_) => Err(ParseError::UnexpectedCharacter),
-                    None => Err(ParseError::UnexpectedEOF)
+                    Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
+                    None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into())
                 }
             },
             Some('0'..='9') => {
-                match self.digits()?.parse::<i64>() {
+                let digits = self.digits()?;
+                match digits.parse::<i64>() {
                     Ok(i) => Ok(i),
-                    Err(_) => Err(ParseError::InvalidInteger)
+                    Err(_) => Err((ParseErrorType::InvalidInteger, self.line, digits).into())
                 }
 
             },
-            Some(_) => Err(ParseError::UnexpectedCharacter),
-            None => Err(ParseError::UnexpectedEOF),
+            Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
+            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
     }
 
@@ -488,8 +536,9 @@ impl<'a> Parser<'a> {
             output.push(self.digit()?);
         }
 
-        match output.chars().nth(0) {
-            Some('0') if output.len() > 1 => return Err(ParseError::InvalidInteger),
+        let char = output.chars().nth(0);
+        match char {
+            Some('0') if output.len() > 1 => return Err((ParseErrorType::InvalidInteger, self.line, char).into()),
             _ => {}
         }
 
@@ -504,14 +553,14 @@ impl<'a> Parser<'a> {
                 Ok('0')
             },
             Some(_) => self.onenine(),
-            None => Err(ParseError::UnexpectedEOF),
+            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
     }
 
     /// Onenine rule.
     fn onenine(&mut self) -> Result<char, ParseError> {
         let char = self.consume_char();
-        unexpected_boilerplate!(char, '1'..='9', Ok(char.unwrap()))
+        unexpected_boilerplate!(char, '1'..='9', Ok(char.unwrap()), self.line)
     }
 
     /// Fraction rule.
@@ -524,7 +573,7 @@ impl<'a> Parser<'a> {
                     let divisor = 10f64.powi(fraction.len() as i32);
                     return Ok(Some(i / divisor));
                 },
-                Err(_) => return Err(ParseError::InvalidFraction),
+                Err(_) => return Err((ParseErrorType::InvalidFraction, self.line, fraction).into()),
             }
         }
 
@@ -535,11 +584,12 @@ impl<'a> Parser<'a> {
     fn exponent(&mut self) -> Result<Option<f64>, ParseError> {
         match self.peek_char() {
             Some('E' | 'e') => {
-                match self.digits()?.parse::<i32>() {
+                let digits = self.digits()?; 
+                match digits.parse::<i32>() {
                     Ok(i) => {
                         Ok(Some(10f64.powi(i)))
                     },
-                    Err(_) => Err(ParseError::InvalidExponent),
+                    Err(_) => Err((ParseErrorType::InvalidExponent, self.line, digits).into()),
                 }
             },
             _ => Ok(None),

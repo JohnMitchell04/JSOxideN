@@ -34,9 +34,9 @@ fn main() {
 fn test_{test_name}() {{
     let value = JSOxideN::from_file("{path}");
     if {succeed} {{
-        assert!(value.is_ok(), "Failed to parse {path}, expected success but got {{:?}}", value)
+        assert!(value.is_ok(), "Failed to parse {path}, expected success but got {{}}", value.err().unwrap())
     }} else {{
-        assert!(value.is_err(), "Failed to parse {path}, expected failure but got {{:?}}", value)
+        assert!(value.is_err(), "Failed to parse {path}, expected failure but got {{}}", value.ok().unwrap())
     }}
 }}
             "#,
