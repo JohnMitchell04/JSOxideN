@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::BTreeMap, error::Error, fmt::Display};
+use std::{collections::BTreeMap, error::Error};
 
 /// Number type for floats and integers.
 #[derive(Debug)]
@@ -60,7 +60,8 @@ pub enum ParseErrorType {
     InvalidValue,
     ExpectedEOF,
     RecursionDepthReached,
-    IOError
+    IOError,
+    InvalidSurrogatePair
 }
 
 impl fmt::Display for ParseErrorType {
@@ -77,7 +78,8 @@ impl fmt::Display for ParseErrorType {
             ParseErrorType::InvalidValue => write!(f, "Invalid bollean/null literal."),
             ParseErrorType::ExpectedEOF => write!(f, "Expected EOF but character encountered."),
             ParseErrorType::RecursionDepthReached => write!(f, "The maximum recursion depth was reached."),
-            ParseErrorType::IOError => write!(f, "Couldn't read file")
+            ParseErrorType::IOError => write!(f, "Couldn't read file"),
+            ParseErrorType::InvalidSurrogatePair => write!(f, "The surrogate pair is invalid."),
         }
     }
 }
@@ -440,12 +442,46 @@ impl<'a> Parser<'a> {
                     hex_string.push(self.hex()?);
                 }
 
-                match u32::from_str_radix(&hex_string, 16) {
-                    Ok(representation) => match char::from_u32(representation) {
-                        Some(c) => Ok(c),
-                        None => Err((ParseErrorType::InvalidUnicode, self.line, hex_string).into())
-                    }, 
-                    Err(_) => Err((ParseErrorType::InvalidHex, self.line, hex_string).into()),
+                let representation;
+                if let Ok(i) = u32::from_str_radix(&hex_string, 16) {
+                    representation = i;
+                } else {
+                    return Err((ParseErrorType::InvalidHex, self.line, hex_string).into())
+                }
+
+                if let Some(c) = char::from_u32(representation) { return Ok(c) }
+
+                if !(representation >= 0xD800 && representation <= 0xDBFF) { return Err((ParseErrorType::InvalidUnicode, self.line, hex_string).into()) }
+
+                let mut char = self.consume_char();
+                unexpected_boilerplate!(char, '\\', {}, self.line);
+                
+                char = self.consume_char();
+                unexpected_boilerplate!(char, 'u', {}, self.line);
+
+
+                let mut hex_string2 = String::new();
+                for _ in 0..4 {
+                    hex_string2.push(self.hex()?);
+                }
+
+                match u32::from_str_radix(&hex_string2, 16) {
+                    Ok(representation2) => match char::from_u32(representation2) {
+                        Some(c) => Err((ParseErrorType::InvalidSurrogatePair, self.line, Some(c)).into()),
+                        None => {
+                            if !(representation2 >= 0xDC00 && representation2 <= 0xDFFF) { return Err((ParseErrorType::InvalidUnicode, self.line, hex_string).into()) }
+
+                            let upper = (representation - 0xD800) << 6;
+                            let lower = representation2 - 0xDC00;
+
+                            let char = upper + lower + 0x10000;
+                            match char::from_u32(char) {
+                                Some(c) => Ok(c),
+                                None => Err((ParseErrorType::InvalidSurrogatePair, self.line, None).into())
+                            }
+                        }
+                    },
+                    Err(_) => Err((ParseErrorType::InvalidSurrogatePair, self.line, None).into())
                 }
             },
             Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
@@ -455,9 +491,12 @@ impl<'a> Parser<'a> {
 
     /// Hex rule.
     fn hex(&mut self) -> Result<char, ParseError> {
-        let char = self.consume_char();
+        let char = self.peek_char();
         match char {
-            Some('A'..='F' | 'a'..='f') => Ok(char.unwrap()),
+            Some('A'..='F' | 'a'..='f') => {
+                _ = self.consume_char();
+                Ok(char.unwrap())
+            },
             Some(_) => self.digit(),
             None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
@@ -498,31 +537,31 @@ impl<'a> Parser<'a> {
 
     /// Integer rule.
     fn integer(&mut self) -> Result<i64, ParseError> {
+        let mut neg = false;
         match self.peek_char() {
             Some('-') => {
+                neg = true;
                 _ = self.consume_char();
-                let char = self.peek_char();
-                match char {
-                    Some('0'..='9') => {
-                        let digits = self.digits()?;
-                        match digits.parse::<i64>() {
-                            Ok(i) => Ok(-i),
-                            Err(_) => Err((ParseErrorType::InvalidInteger, self.line, digits).into())
-                        }
-        
-                    },
-                    Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
-                    None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into())
-                }
             },
+            _ => {} 
+        }
+
+        match self.peek_char() {
             Some('0'..='9') => {
                 let digits = self.digits()?;
-                match digits.parse::<i64>() {
-                    Ok(i) => Ok(i),
-                    Err(_) => Err((ParseErrorType::InvalidInteger, self.line, digits).into())
+
+                if digits.chars().nth(0) == Some('0') && digits.len() > 1 {
+                    return Err((ParseErrorType::InvalidInteger, self.line, digits).into())
                 }
 
-            },
+                match digits.parse::<i64>() {
+                    Ok(mut i) => {
+                        if neg { i = -i; }
+                        Ok(i)
+                    },
+                    Err(_) => Err((ParseErrorType::InvalidInteger, self.line, digits).into())
+                }
+            }
             Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
             None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
         }
@@ -537,12 +576,6 @@ impl<'a> Parser<'a> {
             }
 
             output.push(self.digit()?);
-        }
-
-        let char = output.chars().nth(0);
-        match char {
-            Some('0') if output.len() > 1 => return Err((ParseErrorType::InvalidInteger, self.line, char).into()),
-            _ => {}
         }
 
         Ok(output)
