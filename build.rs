@@ -23,7 +23,20 @@ fn main() {
         match test_name.chars().nth(0) {
             Some('n') => succeed = false,
             Some('y') => succeed = true,
-            Some('i') => continue,
+            Some('i') => {
+                let test_function = format!(
+                    r#"
+#[test]
+fn test_{test_name}() {{
+    _ = JSOxideN::from_file("{path}");
+}}
+                    "#,
+                    test_name = test_name,
+                    path = path.display()
+                );
+                f.write_all(test_function.as_bytes()).unwrap();
+                continue;
+            },
             Some(_) => return,
             None => return,
         }
