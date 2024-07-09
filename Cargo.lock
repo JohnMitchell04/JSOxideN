@@ -3,5 +3,5 @@
 version = 3
 
 [[package]]
-name = "JSOxideN"
+name = "jsoxiden"
 version = "0.1.0"

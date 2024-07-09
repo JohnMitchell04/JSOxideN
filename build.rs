@@ -28,7 +28,7 @@ fn main() {
                     r#"
 #[test]
 fn test_{test_name}() {{
-    _ = JSOxideN::from_file("{path}");
+    _ = jsoxiden::from_file("{path}");
 }}
                     "#,
                     test_name = test_name,
@@ -45,7 +45,7 @@ fn test_{test_name}() {{
             r#"
 #[test]
 fn test_{test_name}() {{
-    let value = JSOxideN::from_file("{path}");
+    let value = jsoxiden::from_file("{path}");
     if {succeed} {{
         assert!(value.is_ok(), "Failed to parse {path}, expected success but got {{}}", value.err().unwrap())
     }} else {{
