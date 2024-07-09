@@ -2,7 +2,7 @@ use core::fmt;
 use std::{collections::BTreeMap, error::Error};
 
 /// Number type for floats and integers.
-#[derive(Debug)]
+#[derive(Debug, Clone, Copy)]
 pub enum Number {
     Int(i64),
     Float(f64),
@@ -18,7 +18,7 @@ impl fmt::Display for Number {
 }
 
 /// All possible JSON value types.
-#[derive(Debug)]
+#[derive(Debug, Clone)]
 pub enum Value {
     Null,
     Bool(bool),
