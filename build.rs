@@ -1,6 +1,6 @@
 use std::{env, fs::{self, File}, io::Write, path::Path};
 
-/// Generate tests cases for all of the JSON test cases provided in the [JSONTestSuite repositry](https://github.com/nst/JSONTestSuite.git)
+/// Generate tests cases for all of the JSON test cases provided in the [JSONTestSuite repository](https://github.com/nst/JSONTestSuite.git)
 fn main() {
     let out = env::var("OUT_DIR").unwrap();
     let dest = Path::new(&out).join("generated_tests.rs");
