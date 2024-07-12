@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::BTreeMap, error::Error};
+use std::{collections::BTreeMap, error::Error, ops::Index};
 
 /// Number type for floats and integers.
 #[derive(Debug, Clone, Copy)]
@@ -17,6 +17,13 @@ impl fmt::Display for Number {
     }
 }
 
+#[derive(Debug)]
+pub enum ValueError {
+    IncorrectType,
+    InvalidKey
+}
+
+// TODO: Add a way to index into the objects easily
 /// All possible JSON value types.
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -43,6 +50,63 @@ impl fmt::Display for Value {
                 let entries = o.iter().map(|(k, v)| format!("\"{}\": {}", k, v)).collect::<Vec<_>>().join(", ");
                 write!(f, "{{{}}}", entries)
             },
+        }
+    }
+}
+
+impl Index<&String> for Value {
+    type Output = Value;
+
+    fn index(&self, key: &String) -> &Self::Output {
+        self.get(key).expect("Key is not present or this is not an object")
+    }
+}
+
+impl Value {
+    pub fn get(&self, key: &String) -> Result<&Value, ValueError> {
+        match self {
+            Value::Object(map) => {
+                match map.get(key) {
+                    Some(value) => Ok(&**value),
+                    None => Err(ValueError::InvalidKey)
+                }
+            },
+            _ => Err(ValueError::IncorrectType)
+        }
+    }
+
+    pub fn as_bool(&self) -> Result<&bool, ValueError> {
+        match self {
+            Value::Bool(ref b) => Ok(b),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+
+    pub fn as_number(&self) -> Result<&Number, ValueError> {
+        match self {
+            Value::Number(ref n) => Ok(n),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+
+    pub fn as_string(&self) -> Result<&String, ValueError> {
+        match self {
+            Value::String(ref s) => Ok(s),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+
+    pub fn as_array(&self) -> Result<&Vec<Box<Value>>, ValueError> {
+        match self {
+            Value::Array(ref a) => Ok(a),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+
+    pub fn as_map(&self) -> Result<&BTreeMap<String, Box<Value>>, ValueError> {
+        match self {
+            Value::Object(ref o) => Ok(o),
+            _ => Err(ValueError::IncorrectType),
         }
     }
 }
