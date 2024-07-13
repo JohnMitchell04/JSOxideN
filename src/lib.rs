@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::BTreeMap, error::Error, ops::Index};
+use std::{borrow::Borrow, collections::BTreeMap, error::Error, ops::Index};
 
 /// Number type for floats and integers.
 #[derive(Debug, Clone, Copy)]
@@ -54,16 +54,16 @@ impl fmt::Display for Value {
     }
 }
 
-impl Index<&String> for Value {
+impl Index<&str> for Value {
     type Output = Value;
 
-    fn index(&self, key: &String) -> &Self::Output {
+    fn index(&self, key: &str) -> &Self::Output {
         self.get(key).expect("Key is not present or this is not an object")
     }
 }
 
 impl Value {
-    pub fn get(&self, key: &String) -> Result<&Value, ValueError> {
+    pub fn get(&self, key: &str) -> Result<&Value, ValueError> {
         match self {
             Value::Object(map) => {
                 match map.get(key) {
