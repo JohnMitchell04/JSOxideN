@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{borrow::Borrow, collections::BTreeMap, error::Error, ops::Index};
+use std::{collections::BTreeMap, error::Error, ops::Index};
 
 /// Number type for floats and integers.
 #[derive(Debug, Clone, Copy)]
@@ -216,6 +216,7 @@ pub fn from_file(filepath: &str) -> Result<Value, Box<dyn Error>> {
 }
 
 /// Parser struct.
+// TODO: maybe re write with iter peekable
 struct Parser<'a> {
     input: &'a str,
     pos: usize,
@@ -535,7 +536,7 @@ impl<'a> Parser<'a> {
                         None => {
                             if !(representation2 >= 0xDC00 && representation2 <= 0xDFFF) { return Err((ParseErrorType::InvalidUnicode, self.line, hex_string).into()) }
 
-                            let upper = (representation - 0xD800) << 6;
+                            let upper = (representation - 0xD800) << 10;
                             let lower = representation2 - 0xDC00;
 
                             let char = upper + lower + 0x10000;
