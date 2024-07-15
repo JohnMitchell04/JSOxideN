@@ -1,5 +1,5 @@
 use core::fmt;
-use std::{collections::BTreeMap, error::Error, ops::Index};
+use std::{collections::BTreeMap, error::Error, iter::Peekable, ops::Index, str::Chars};
 
 /// Number type for floats and integers.
 #[derive(Debug, Clone, Copy)]
@@ -23,7 +23,6 @@ pub enum ValueError {
     InvalidKey
 }
 
-// TODO: Add a way to index into the objects easily
 /// All possible JSON value types.
 #[derive(Debug, Clone)]
 pub enum Value {
@@ -131,73 +130,66 @@ pub enum ParseErrorType {
 impl fmt::Display for ParseErrorType {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
-            ParseErrorType::UnexpectedCharacter => write!(f, "Unexpected character encountered."),
-            ParseErrorType::UnexpectedEOF => write!(f, "Unexpected EOF encountered."),
-            ParseErrorType::InvalidHex => write!(f, "Invalid hex number encountered."),
-            ParseErrorType::InvalidUnicode => write!(f, "Invalid unicode literal encountered."),
-            ParseErrorType::InvalidInteger => write!(f, "Could not parse integer."),
-            ParseErrorType::InvalidFraction => write!(f, "Could not parse fractional part."),
-            ParseErrorType::InvalidExponent => write!(f, "Could not parse exponent."),
-            ParseErrorType::NumberOutOfBounds => write!(f, "Number cannot be stored in an double."),
-            ParseErrorType::InvalidValue => write!(f, "Invalid bollean/null literal."),
-            ParseErrorType::ExpectedEOF => write!(f, "Expected EOF but character encountered."),
-            ParseErrorType::RecursionDepthReached => write!(f, "The maximum recursion depth was reached."),
+            ParseErrorType::UnexpectedCharacter => write!(f, "Unexpected character encountered"),
+            ParseErrorType::UnexpectedEOF => write!(f, "Unexpected EOF encountered"),
+            ParseErrorType::InvalidHex => write!(f, "Invalid hex number encountered"),
+            ParseErrorType::InvalidUnicode => write!(f, "Invalid unicode literal encountered"),
+            ParseErrorType::InvalidInteger => write!(f, "Could not parse integer"),
+            ParseErrorType::InvalidFraction => write!(f, "Could not parse fractional part"),
+            ParseErrorType::InvalidExponent => write!(f, "Could not parse exponent"),
+            ParseErrorType::InvalidValue => write!(f, "Invalid bollean/null literal"),
+            ParseErrorType::InvalidSurrogatePair => write!(f, "The surrogate pair is invalid"),
+            ParseErrorType::NumberOutOfBounds => write!(f, "Number cannot be stored in an double"),
+            ParseErrorType::ExpectedEOF => write!(f, "Expected EOF but character encountered"),
+            ParseErrorType::RecursionDepthReached => write!(f, "The maximum recursion depth was reached"),
             ParseErrorType::IOError => write!(f, "Couldn't read file"),
-            ParseErrorType::InvalidSurrogatePair => write!(f, "The surrogate pair is invalid."),
         }
     }
 }
 
-/// TODO: Add position in line
 #[derive(Debug)]
 pub struct ParseError {
     error_type: ParseErrorType,
+    col: usize,
     line: usize,
-    string: Option<String>,
+    value: Option<String>,
 }
 
 impl fmt::Display for ParseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match &self.string {
-            Some(c) => write!(f, "Error: {} On line: {}, around: {}", self.error_type, self.line, c),
-            None => write!(f, "Error: {} On line: {}, character EOF", self.error_type, self.line),
+        match &self.value {
+            Some(string) => write!(f, "Error: {}, Column: {}, On line: {}, around: {}", self.error_type, self.col, self.line, string),
+            None => write!(f, "Error: {}, Column: {} On line: {}", self.col, self.error_type, self.line),
         }
     }
 }
 
 impl Error for ParseError {}
 
-impl From<(ParseErrorType, usize, Option<char>)> for ParseError {
-    fn from((error_type, line, character): (ParseErrorType, usize, Option<char>)) -> Self {
-        let string;
-        match character {
-            Some(c) => string = Some(String::from(c)),
-            None => string = None,
-        }
-        ParseError {
-            error_type,
-            line,
-            string
-        }
+impl From<(ParseErrorType, usize, usize, char)> for ParseError {
+    fn from((error_type, col, line, character): (ParseErrorType, usize, usize, char)) -> Self {
+        ParseError { error_type, col, line, value: Some(String::from(character)) }
     }
 }
 
-impl From<(ParseErrorType, usize, String)> for ParseError {
-    fn from((error_type, line, string): (ParseErrorType, usize, String)) -> Self {
-        ParseError {
-            error_type,
-            line,
-            string: Some(string)
-        }
+impl From<(ParseErrorType, usize, usize)> for ParseError {
+    fn from((error_type, col, line): (ParseErrorType, usize, usize)) -> Self {
+        ParseError { error_type, col, line, value: None }
+    }
+}
+
+impl From<(ParseErrorType, usize, usize, String)> for ParseError {
+    fn from((error_type, col, line, string): (ParseErrorType, usize, usize, String)) -> Self {
+        ParseError { error_type, col, line, value: Some(string) }
     }
 }
 
 macro_rules! unexpected_boilerplate {
-    ($v:ident, $pat:pat, $e:expr, $l:expr) => {
+    ($v:ident, $pat:pat, $e:expr, $c:expr, $l:expr) => {
         match $v {
-            Some(c) if matches!(c, $pat) => $e,
-            Some(k) => return Err((ParseErrorType::UnexpectedCharacter, $l, Some(k)).into()),
-            None => return Err((ParseErrorType::UnexpectedEOF, $l, None).into()),
+            Some(ch) if matches!(ch, $pat) => $e,
+            Some(ch) => return Err((ParseErrorType::UnexpectedCharacter, $c, $l, ch).into()),
+            None => return Err((ParseErrorType::UnexpectedEOF, $c, $l).into()),
         }
     };
 }
@@ -216,45 +208,42 @@ pub fn from_file(filepath: &str) -> Result<Value, Box<dyn Error>> {
 }
 
 /// Parser struct.
-// TODO: maybe re write with iter peekable
 struct Parser<'a> {
-    input: &'a str,
-    pos: usize,
+    input: Peekable<Chars<'a>>,
+    col: usize,
     line: usize,
     recurse_depth: i16,
 }
 
 impl<'a> Parser<'a> {
     fn new(input: &'a str) -> Parser {
+        let iter = input.chars().peekable();
+
         Parser {
-            input,
-            pos: 0,
-            line: 0,
+            input: iter,
+            col: 1,
+            line: 1,
             recurse_depth: 0,
         }
     }
 
-    /// Peek the next character without consuming.
-    fn peek_char(&self) -> Option<char> {
-        let mut chars = self.input[self.pos..].chars();
-        chars.next()
-    }
-
     /// Get the next character in the input string.
-    fn consume_char(&mut self) -> Option<char> {
-        let mut chars = self.input[self.pos..].chars();
-        let next_char = chars.next()?;
-        let next_pos = next_char.len_utf8();
-        self.pos += next_pos;
-        if next_char == '\n' { self.line += 1 }
-        Some(next_char)
+    fn consume(&mut self) -> Option<char> {
+        let char = self.input.next();
+        self.col += 1;
+        if let Some('\n') = char {
+            self.line += 1;
+            self.col = 1;
+        };
+
+        char
     }
 
     /// Eat whitespace characters.
     fn eat_whitespace(&mut self) {
-        while let Some(c) = self.peek_char() {
+        while let Some(c) = self.input.peek() {
             match c {
-                '\u{0020}' | '\u{000A}' | '\u{000D}' | '\u{0009}' => _ = self.consume_char(),
+                '\u{0020}' | '\u{000A}' | '\u{000D}' | '\u{0009}' => _ = self.consume(),
                 _ => break,
             }
         }
@@ -263,115 +252,88 @@ impl<'a> Parser<'a> {
     /// Parse the input string.
     fn parse(&mut self) -> Result<Value, ParseError> {
         let value = self.element()?;
-        match self.peek_char() {
+        match self.input.peek() {
             None => Ok(value),
-            c => Err((ParseErrorType::ExpectedEOF, self.line, c).into())
+            Some(char) => Err((ParseErrorType::ExpectedEOF, self.col, self.line, *char).into())
         }
     }
 
     /// Value rule.
     fn value(&mut self) -> Result<Value, ParseError> {
-        let char = self.peek_char();
+        let char = self.input.peek();
         match char {
             Some('{') => self.object(),
             Some('[') => self.array(),
-            Some('"') => {
-                let value = self.string()?;
-                Ok(Value::String(value))
-            },
+            Some('"') => Ok(Value::String(self.string()?)),
             Some('t' | 'f') => {
                 if let Some('t') = char {
-                    let mut value = String::from("");
-                    for _ in 0..4 {
-                        match self.consume_char() {
-                            Some(c) => value.push(c),
-                            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
-                        }
-                    }
+                    let value = self.input.by_ref().take(4).collect::<String>();
 
-                    if value == "true" {
-                        Ok(Value::Bool(true))
-                    } else {
-                        Err((ParseErrorType::InvalidValue, self.line, value).into())
-                    }
+                    if value.len() < 4 { return Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()) }
+                    if value != "true" { return Err((ParseErrorType::InvalidValue, self.col, self.line, value).into()) }
+
+                    Ok(Value::Bool(true))
                 } else {
-                    let mut value = String::from("");
-                    for _ in 0..5 {
-                        match self.consume_char() {
-                            Some(c) => value.push(c),
-                            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
-                        }
-                    }
+                    let value = self.input.by_ref().take(5).collect::<String>();
 
-                    if value == "false" {
-                        Ok(Value::Bool(false))
-                    } else {
-                        Err((ParseErrorType::InvalidValue, self.line, value).into())
-                    }
+                    if value.len() < 5 { return Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()) }
+                    if value != "false" { return Err((ParseErrorType::InvalidValue, self.col, self.line, value).into()) }
+
+                    Ok(Value::Bool(false))
                 }
             },
             Some('n') => {
-                let mut value = String::from("");
-                    for _ in 0..4 {
-                        match self.consume_char() {
-                            Some(c) => value.push(c),
-                            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
-                        }
-                    }
+                let value = self.input.by_ref().take(4).collect::<String>();
+                
+                if value.len() < 4 { return Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()) }
+                if value != "null" { return Err((ParseErrorType::InvalidValue, self.col, self.line, value).into()) }
 
-                    if value == "null" {
-                        Ok(Value::Null)
-                    } else {
-                        Err((ParseErrorType::InvalidValue, self.line, value).into())
-                    }
+                Ok(Value::Null)
             },
             Some(_) => self.number(),
-            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
+            None => Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
         }
     }
 
     /// Object rule.
     fn object(&mut self) -> Result<Value, ParseError> {
         self.recurse_depth += 1;
-        if self.recurse_depth > 100 {
-            return Err((ParseErrorType::RecursionDepthReached, self.line, None).into());
-        }
+        if self.recurse_depth > 100 { return Err((ParseErrorType::RecursionDepthReached, self.col, self.line).into()) }
 
-        let mut char = self.consume_char();
-        unexpected_boilerplate!(char, '{', {}, self.line);
+        let char = self.consume();
+        unexpected_boilerplate!(char, '{', {}, self.col, self.line);
 
         self.eat_whitespace();
-        char = self.peek_char();
+        let char = self.input.peek();
         let value;
         match char {
             Some('}') => {
-                _ = self.consume_char();
+                _ = self.consume();
                 return Ok(Value::Object(BTreeMap::new()))
             },
             Some(_) => value = self.members()?,
-            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
+            None => return Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
         }
 
         self.recurse_depth -= 1;
 
-        char = self.consume_char();
-        unexpected_boilerplate!(char, '}', Ok(value), self.line)
+        let char = self.consume();
+        unexpected_boilerplate!(char, '}', Ok(value), self.col, self.line)
     }
 
     /// Members rule.
     fn members(&mut self) -> Result<Value, ParseError> {
-        let mut char;
         let mut map =  BTreeMap::new();
         loop {
             let (key, value) = self.member()?;
 
             map.insert(key, Box::new(value));
 
-            char = self.peek_char();
-            if char != Some(',') {
+            let char = self.input.peek();
+            if char != Some(&',') {
                 break;
             }
-            _ = self.consume_char();
+            _ = self.consume();
         }
 
         Ok(Value::Object(map))
@@ -383,8 +345,8 @@ impl<'a> Parser<'a> {
         let key = self.string()?;
         self.eat_whitespace();
 
-        let char = self.consume_char();
-        unexpected_boilerplate!(char, ':', {}, self.line);
+        let char = self.consume();
+        unexpected_boilerplate!(char, ':', {}, self.col, self.line);
 
         let value = self.element()?;
         Ok((key, value))
@@ -393,45 +355,42 @@ impl<'a> Parser<'a> {
     /// Array rule.
     fn array(&mut self) -> Result<Value, ParseError> {
         self.recurse_depth += 1;
-        if self.recurse_depth > 100 {
-            return Err((ParseErrorType::RecursionDepthReached, self.line, None).into());
-        }
+        if self.recurse_depth > 100 { return Err((ParseErrorType::RecursionDepthReached, self.col, self.line).into()) }
 
-        let mut char = self.consume_char();
-        unexpected_boilerplate!(char, '[', {}, self.line);
+        let char = self.consume();
+        unexpected_boilerplate!(char, '[', {}, self.col, self.line);
 
         self.eat_whitespace();
-        char = self.peek_char();
+        let char = self.input.peek();
         let value;
         match char {
             Some(']') => {
-                _ = self.consume_char();
+                _ = self.consume();
                 return Ok(Value::Array(Vec::new()))
             },
             Some(_) => value = self.elements()?,
-            None => return Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
+            None => return Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
         }
 
         self.recurse_depth -= 1;
 
-        char = self.consume_char();
-        unexpected_boilerplate!(char, ']', Ok(value), self.line)
+        let char = self.consume();
+        unexpected_boilerplate!(char, ']', Ok(value), self.col, self.line)
     }
 
     /// Elements rule.
     fn elements(&mut self) -> Result<Value, ParseError> {
-        let mut char;
         let mut vec = Vec::new();
         loop {
             let value = self.element()?;
 
             vec.push(Box::new(value));
 
-            char = self.peek_char();
-            if char != Some(',') {
+            let char = self.input.peek();
+            if char != Some(&',') {
                 break;
             }
-            _ = self.consume_char();
+            _ = self.consume();
         }
 
         Ok(Value::Array(vec))
@@ -447,13 +406,13 @@ impl<'a> Parser<'a> {
 
     /// String rule.
     fn string(&mut self) -> Result<String, ParseError> {
-        let mut char = self.consume_char();
-        unexpected_boilerplate!(char, '"', {}, self.line);
+        let mut char = self.consume();
+        unexpected_boilerplate!(char, '"', {}, self.col, self.line);
 
         let value = self.characters()?;
 
-        char = self.consume_char();
-        unexpected_boilerplate!(char, '"', Ok(value), self.line)
+        char = self.consume();
+        unexpected_boilerplate!(char, '"', Ok(value), self.col, self.line)
     }
 
     /// Characters rule.
@@ -472,26 +431,23 @@ impl<'a> Parser<'a> {
 
     /// Character rule.
     fn character(&mut self) -> Result<Option<char>, ParseError> {
-        let char = self.peek_char();
+        let char = self.input.peek();
         match char {
             Some('"') => Ok(None),
             Some('\\') => {
-                _ = self.consume_char();
+                _ = self.consume();
                 let char = self.escape()?;
                 Ok(Some(char))
             },
-            Some('\u{0020}'..='\u{10FFFF}') => {
-                _ = self.consume_char();
-                Ok(char)
-            },
-            Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
-            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
+            Some('\u{0020}'..='\u{10FFFF}') => Ok(self.consume()),
+            Some(char) => Err((ParseErrorType::UnexpectedCharacter, self.col, self.line, *char).into()),
+            None => Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
         }
     }
 
     /// Escape rule.
     fn escape(&mut self) -> Result<char, ParseError> {
-        let char = self.consume_char();
+        let char = self.consume();
         match char {
             Some('"') => Ok('"'),
             Some('\\') => Ok('\\'),
@@ -502,68 +458,54 @@ impl<'a> Parser<'a> {
             Some('r') => Ok('\r'),
             Some('t') => Ok('\t'),
             Some('u') => {
-                let mut hex_string = String::new();
-                for _ in 0..4 {
-                    hex_string.push(self.hex()?);
-                }
+                let hex_string = self.input.by_ref().take(4).collect::<String>();
 
-                let representation;
-                if let Ok(i) = u32::from_str_radix(&hex_string, 16) {
-                    representation = i;
-                } else {
-                    return Err((ParseErrorType::InvalidHex, self.line, hex_string).into())
-                }
+                let representation = u32::from_str_radix(&hex_string, 16)
+                    .map_err(|_| -> ParseError { (ParseErrorType::InvalidHex, self.col, self.line, hex_string.clone()).into() })?;
 
                 if let Some(c) = char::from_u32(representation) { return Ok(c) }
+                if !(representation >= 0xD800 && representation <= 0xDBFF) { return Err((ParseErrorType::InvalidUnicode, self.col, self.line, hex_string).into()) }
 
-                if !(representation >= 0xD800 && representation <= 0xDBFF) { return Err((ParseErrorType::InvalidUnicode, self.line, hex_string).into()) }
-
-                let mut char = self.consume_char();
-                unexpected_boilerplate!(char, '\\', {}, self.line);
+                let mut char = self.consume();
+                unexpected_boilerplate!(char, '\\', {}, self.col, self.line);
                 
-                char = self.consume_char();
-                unexpected_boilerplate!(char, 'u', {}, self.line);
+                char = self.consume();
+                unexpected_boilerplate!(char, 'u', {}, self.col, self.line);
 
 
-                let mut hex_string2 = String::new();
-                for _ in 0..4 {
-                    hex_string2.push(self.hex()?);
-                }
+                let hex_string2 = self.input.by_ref().take(4).collect::<String>();
 
-                match u32::from_str_radix(&hex_string2, 16) {
-                    Ok(representation2) => match char::from_u32(representation2) {
-                        Some(c) => Err((ParseErrorType::InvalidSurrogatePair, self.line, Some(c)).into()),
-                        None => {
-                            if !(representation2 >= 0xDC00 && representation2 <= 0xDFFF) { return Err((ParseErrorType::InvalidUnicode, self.line, hex_string).into()) }
+                let representation2 = u32::from_str_radix(&hex_string2, 16)
+                    .map_err(|_| -> ParseError { (ParseErrorType::InvalidHex, self.col, self.line, hex_string2).into() })?;
 
-                            let upper = (representation - 0xD800) << 10;
-                            let lower = representation2 - 0xDC00;
+                match char::from_u32(representation2) {
+                    Some(char) => Err((ParseErrorType::InvalidSurrogatePair, self.col, self.line, char).into()),
+                    None => {
+                        if !(representation2 >= 0xDC00 && representation2 <= 0xDFFF) { return Err((ParseErrorType::InvalidUnicode, self.col, self.line, hex_string).into()) }
 
-                            let char = upper + lower + 0x10000;
-                            match char::from_u32(char) {
-                                Some(c) => Ok(c),
-                                None => Err((ParseErrorType::InvalidSurrogatePair, self.line, None).into())
-                            }
+                        let upper = (representation - 0xD800) << 10;
+                        let lower = representation2 - 0xDC00;
+
+                        let char = upper + lower + 0x10000;
+                        match char::from_u32(char) {
+                            Some(c) => Ok(c),
+                            None => Err((ParseErrorType::InvalidSurrogatePair, self.col, self.line).into())
                         }
-                    },
-                    Err(_) => Err((ParseErrorType::InvalidSurrogatePair, self.line, None).into())
+                    }
                 }
             },
-            Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
-            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
+            Some(char) => Err((ParseErrorType::UnexpectedCharacter, self.col, self.line, char).into()),
+            None => Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
         }
     }
 
     /// Hex rule.
     fn hex(&mut self) -> Result<char, ParseError> {
-        let char = self.peek_char();
+        let char = self.input.peek();
         match char {
-            Some('A'..='F' | 'a'..='f') => {
-                _ = self.consume_char();
-                Ok(char.unwrap())
-            },
+            Some('A'..='F' | 'a'..='f') => Ok(self.consume().unwrap()),
             Some(_) => self.digit(),
-            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
+            None => Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
         }
     }
 
@@ -576,9 +518,7 @@ impl<'a> Parser<'a> {
         match frac {
             Some(i) => {
                 match exp {
-                    Some(j) => {
-                        Ok(Value::Number(Number::Float((int as f64 + i) * j)))
-                    },
+                    Some(j) => Ok(Value::Number(Number::Float((int as f64 + i) * j))),
                     None => Ok(Value::Number(Number::Float(int as f64 + i))),
                 }
             },
@@ -603,32 +543,30 @@ impl<'a> Parser<'a> {
     /// Integer rule.
     fn integer(&mut self) -> Result<i64, ParseError> {
         let mut neg = false;
-        match self.peek_char() {
+        match self.input.peek() {
             Some('-') => {
                 neg = true;
-                _ = self.consume_char();
+                _ = self.consume();
             },
             _ => {} 
         }
 
-        match self.peek_char() {
+        match self.input.peek() {
             Some('0'..='9') => {
                 let digits = self.digits()?;
 
-                if digits.chars().nth(0) == Some('0') && digits.len() > 1 {
-                    return Err((ParseErrorType::InvalidInteger, self.line, digits).into())
-                }
+                if digits.chars().nth(0) == Some('0') && digits.len() > 1 { return Err((ParseErrorType::InvalidInteger, self.col ,self.line, digits).into()) }
 
                 match digits.parse::<i64>() {
                     Ok(mut i) => {
                         if neg { i = -i; }
                         Ok(i)
                     },
-                    Err(_) => Err((ParseErrorType::InvalidInteger, self.line, digits).into())
+                    Err(_) => Err((ParseErrorType::InvalidInteger, self.col, self.line, digits).into())
                 }
             }
-            Some(c) => Err((ParseErrorType::UnexpectedCharacter, self.line, Some(c)).into()),
-            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
+            Some(char) => Err((ParseErrorType::UnexpectedCharacter, self.col, self.line, *char).into()),
+            None => Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
         }
     }
 
@@ -636,9 +574,7 @@ impl<'a> Parser<'a> {
     fn digits(&mut self) -> Result<String, ParseError> {
         let mut output = String::new();
         loop {
-            if !matches!(self.peek_char(), Some('0'..='9')) {
-                break;
-            }
+            if !matches!(self.input.peek(), Some('0'..='9')) { break }
 
             output.push(self.digit()?);
         }
@@ -648,33 +584,33 @@ impl<'a> Parser<'a> {
 
     /// Digit rule.
     fn digit(&mut self) -> Result<char, ParseError> {
-        match self.peek_char() {
+        match self.input.peek() {
             Some('0') => {
-                _ = self.consume_char();
+                _ = self.consume();
                 Ok('0')
             },
             Some(_) => self.onenine(),
-            None => Err((ParseErrorType::UnexpectedEOF, self.line, None).into()),
+            None => Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
         }
     }
 
     /// Onenine rule.
     fn onenine(&mut self) -> Result<char, ParseError> {
-        let char = self.consume_char();
-        unexpected_boilerplate!(char, '1'..='9', Ok(char.unwrap()), self.line)
+        let char = self.consume();
+        unexpected_boilerplate!(char, '1'..='9', Ok(char.unwrap()), self.col, self.line)
     }
 
     /// Fraction rule.
     fn fraction(&mut self) ->  Result<Option<f64>, ParseError>{
-        if self.peek_char() == Some('.') {
-            _ = self.consume_char();
+        if self.input.peek() == Some(&'.') {
+            _ = self.consume();
             let fraction = self.digits()?;
             match fraction.parse::<f64>() {
                 Ok(i) => {
                     let divisor = 10f64.powi(fraction.len() as i32);
                     return Ok(Some(i / divisor));
                 },
-                Err(_) => return Err((ParseErrorType::InvalidFraction, self.line, fraction).into()),
+                Err(_) => return Err((ParseErrorType::InvalidFraction, self.col, self.line, fraction).into()),
             }
         }
 
@@ -683,15 +619,15 @@ impl<'a> Parser<'a> {
 
     /// Exponent rule.
     fn exponent(&mut self) -> Result<Option<f64>, ParseError> {
-        match self.peek_char() {
+        match self.input.peek() {
             Some('E' | 'e') => {
-                _ = self.consume_char();
+                _ = self.consume();
 
                 let mut pos = true;
-                match self.peek_char() {
-                    Some('+') => _ = self.consume_char(),
+                match self.input.peek() {
+                    Some('+') => _ = self.consume(),
                     Some('-') => {
-                        _ = self.consume_char();
+                        _ = self.consume();
                         pos = false
                     },
                     _ => {}
@@ -706,7 +642,7 @@ impl<'a> Parser<'a> {
                             Ok(Some(10f64.powi(i)))
                         }
                     },
-                    Err(_) => Err((ParseErrorType::InvalidExponent, self.line, digits).into()),
+                    Err(_) => Err((ParseErrorType::InvalidExponent, self.col, self.line, digits).into()),
                 }
             },
             _ => Ok(None),
