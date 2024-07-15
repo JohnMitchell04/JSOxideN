@@ -499,16 +499,6 @@ impl<'a> Parser<'a> {
         }
     }
 
-    /// Hex rule.
-    fn hex(&mut self) -> Result<char, ParseError> {
-        let char = self.input.peek();
-        match char {
-            Some('A'..='F' | 'a'..='f') => Ok(self.consume().unwrap()),
-            Some(_) => self.digit(),
-            None => Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
-        }
-    }
-
     /// Number rule.
     fn number(&mut self) -> Result<Value, ParseError> {
         let int = self.integer()?;
