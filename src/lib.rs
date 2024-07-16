@@ -81,6 +81,18 @@ impl Value {
             _ => Err(ValueError::IncorrectType)
         }
     }
+
+    pub fn remove(&mut self, key: &str) -> Result<Value, ValueError> {
+        match self {
+            Value::Object(ref mut map) => {
+                match map.remove(key) {
+                    Some(value) => Ok(*value),
+                    None => Err(ValueError::InvalidKey)
+                }
+            }
+            _ => Err(ValueError::IncorrectType)
+        }
+    }
 }
 
 impl TryFrom<Value> for bool {
