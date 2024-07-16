@@ -30,8 +30,8 @@ pub enum Value {
     Bool(bool),
     Number(Number),
     String(String),
-    Array(Vec<Box<Value>>),
-    Object(BTreeMap<String, Box<Value>>)
+    Array(Vec<Value>),
+    Object(BTreeMap<String, Value>)
 }
 
 impl Value {
@@ -56,14 +56,14 @@ impl Value {
         }
     }
 
-    pub fn as_array(&self) -> Result<&Vec<Box<Value>>, ValueError> {
+    pub fn as_array(&self) -> Result<&Vec<Value>, ValueError> {
         match self {
             Value::Array(ref a) => Ok(a),
             _ => Err(ValueError::IncorrectType),
         }
     }
 
-    pub fn as_map(&self) -> Result<&BTreeMap<String, Box<Value>>, ValueError> {
+    pub fn as_map(&self) -> Result<&BTreeMap<String, Value>, ValueError> {
         match self {
             Value::Object(ref o) => Ok(o),
             _ => Err(ValueError::IncorrectType),
@@ -74,7 +74,7 @@ impl Value {
         match self {
             Value::Object(map) => {
                 match map.get(key) {
-                    Some(value) => Ok(&**value),
+                    Some(value) => Ok(value),
                     None => Err(ValueError::InvalidKey)
                 }
             },
@@ -86,7 +86,7 @@ impl Value {
         match self {
             Value::Object(ref mut map) => {
                 match map.remove(key) {
-                    Some(value) => Ok(*value),
+                    Some(value) => Ok(value),
                     None => Err(ValueError::InvalidKey)
                 }
             }
@@ -128,7 +128,7 @@ impl TryFrom<Value> for String {
     }
 }
 
-impl TryFrom<Value> for Vec<Box<Value>> {
+impl TryFrom<Value> for Vec<Value> {
     type Error = ValueError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
@@ -139,7 +139,7 @@ impl TryFrom<Value> for Vec<Box<Value>> {
     }
 }
 
-impl TryFrom<Value> for BTreeMap<String, Box<Value>> {
+impl TryFrom<Value> for BTreeMap<String, Value> {
     type Error = ValueError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
@@ -150,6 +150,7 @@ impl TryFrom<Value> for BTreeMap<String, Box<Value>> {
     }
 }
 
+// TODO: Re-write to be prettier
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -400,7 +401,7 @@ impl<'a> Parser<'a> {
         loop {
             let (key, value) = self.member()?;
 
-            map.insert(key, Box::new(value));
+            map.insert(key, value);
 
             let char = self.input.peek();
             if char != Some(&',') {
@@ -457,7 +458,7 @@ impl<'a> Parser<'a> {
         loop {
             let value = self.element()?;
 
-            vec.push(Box::new(value));
+            vec.push(value);
 
             let char = self.input.peek();
             if char != Some(&',') {
