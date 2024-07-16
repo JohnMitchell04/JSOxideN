@@ -2,7 +2,7 @@ use core::fmt;
 use std::{collections::BTreeMap, error::Error, iter::Peekable, ops::Index, str::Chars};
 
 /// Number type for floats and integers.
-#[derive(Debug, Clone, Copy)]
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum Number {
     Int(i64),
     Float(f64),
@@ -34,6 +34,110 @@ pub enum Value {
     Object(BTreeMap<String, Box<Value>>)
 }
 
+impl Value {
+    pub fn as_bool(&self) -> Result<&bool, ValueError> {
+        match self {
+            Value::Bool(ref b) => Ok(b),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+
+    pub fn as_number(&self) -> Result<&Number, ValueError> {
+        match self {
+            Value::Number(ref n) => Ok(n),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+
+    pub fn as_str(&self) -> Result<&str, ValueError> {
+        match self {
+            Value::String(ref s) => Ok(s),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+
+    pub fn as_array(&self) -> Result<&Vec<Box<Value>>, ValueError> {
+        match self {
+            Value::Array(ref a) => Ok(a),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+
+    pub fn as_map(&self) -> Result<&BTreeMap<String, Box<Value>>, ValueError> {
+        match self {
+            Value::Object(ref o) => Ok(o),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Result<&Value, ValueError> {
+        match self {
+            Value::Object(map) => {
+                match map.get(key) {
+                    Some(value) => Ok(&**value),
+                    None => Err(ValueError::InvalidKey)
+                }
+            },
+            _ => Err(ValueError::IncorrectType)
+        }
+    }
+}
+
+impl TryFrom<Value> for bool {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Bool(b) => Ok(b),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+}
+
+impl TryFrom<Value> for Number {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Number(n) => Ok(n),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+}
+
+impl TryFrom<Value> for String {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::String(s) => Ok(s),
+            _ => Err(ValueError::IncorrectType),
+        }
+    }
+}
+
+impl TryFrom<Value> for Vec<Box<Value>> {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Array(v) => Ok(v),
+            _ => Err(ValueError::IncorrectType)
+        }
+    }
+}
+
+impl TryFrom<Value> for BTreeMap<String, Box<Value>> {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Object(o) => Ok(o),
+            _ => Err(ValueError::IncorrectType)
+        }
+    }
+}
+
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
         match self {
@@ -57,55 +161,10 @@ impl Index<&str> for Value {
     type Output = Value;
 
     fn index(&self, key: &str) -> &Self::Output {
-        self.get(key).expect("Key is not present or this is not an object")
-    }
-}
-
-impl Value {
-    pub fn get(&self, key: &str) -> Result<&Value, ValueError> {
-        match self {
-            Value::Object(map) => {
-                match map.get(key) {
-                    Some(value) => Ok(&**value),
-                    None => Err(ValueError::InvalidKey)
-                }
-            },
-            _ => Err(ValueError::IncorrectType)
-        }
-    }
-
-    pub fn as_bool(&self) -> Result<&bool, ValueError> {
-        match self {
-            Value::Bool(ref b) => Ok(b),
-            _ => Err(ValueError::IncorrectType),
-        }
-    }
-
-    pub fn as_number(&self) -> Result<&Number, ValueError> {
-        match self {
-            Value::Number(ref n) => Ok(n),
-            _ => Err(ValueError::IncorrectType),
-        }
-    }
-
-    pub fn as_string(&self) -> Result<&String, ValueError> {
-        match self {
-            Value::String(ref s) => Ok(s),
-            _ => Err(ValueError::IncorrectType),
-        }
-    }
-
-    pub fn as_array(&self) -> Result<&Vec<Box<Value>>, ValueError> {
-        match self {
-            Value::Array(ref a) => Ok(a),
-            _ => Err(ValueError::IncorrectType),
-        }
-    }
-
-    pub fn as_map(&self) -> Result<&BTreeMap<String, Box<Value>>, ValueError> {
-        match self {
-            Value::Object(ref o) => Ok(o),
-            _ => Err(ValueError::IncorrectType),
+        match self.get(key) {
+            Ok(v) => v,
+            Err(ValueError::IncorrectType) => panic!("This value is not an object"),
+            Err(ValueError::InvalidKey) => panic!("Key is not present"),
         }
     }
 }
@@ -201,6 +260,12 @@ pub fn from_str(input: &str) -> Result<Value, ParseError> {
 }
 
 /// Parse JSON from a file and return a Value.
+/// 
+/// # Arguments:
+/// * `filepath` - The path to the file.
+/// 
+/// # Returns:
+/// * `Result<Value, Box<dyn Error>>` - The parsed JSON value or an `io::Error` if the file could not be read or a `ParseError` if the JSON is invalid.
 pub fn from_file(filepath: &str) -> Result<Value, Box<dyn Error>> {
     let input = std::fs::read_to_string(filepath)?;
     let mut parser = Parser::new(&input);
@@ -216,15 +281,11 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
+    /// Create new parser.
     fn new(input: &'a str) -> Parser {
         let iter = input.chars().peekable();
 
-        Parser {
-            input: iter,
-            col: 1,
-            line: 1,
-            recurse_depth: 0,
-        }
+        Parser { input: iter, col: 1, line: 1, recurse_depth: 0 }
     }
 
     /// Get the next character in the input string.
