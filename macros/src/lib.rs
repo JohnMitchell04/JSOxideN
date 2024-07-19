@@ -20,7 +20,9 @@ pub fn derive_deserialise(input: TokenStream) -> TokenStream {
                 fields_vals.extend(quote!(
                     #name: value
                         .remove(stringify!(#name))
-                        .try_into(),
+                        .unwrap()
+                        .try_into()
+                        .unwrap(),
                 ));
             }
         } else {
@@ -30,7 +32,7 @@ pub fn derive_deserialise(input: TokenStream) -> TokenStream {
         let output = quote! {
             impl Deserialise for #name {
                 fn from_str(input: &str) -> Self {
-                    let value = jsoxiden::from_str(input).unwrap();
+                    let mut value = jsoxiden::from_str(input).unwrap();
     
                     Self { #fields_vals }
                 }
