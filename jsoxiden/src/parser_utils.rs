@@ -78,6 +78,13 @@ impl Number {
             Number::Float(_) => true,
         }
     }
+
+    pub fn value_type(&self) -> &'static str {
+        match self {
+            Number::Int(_) => "Integer",
+            Number::Float(_) => "Float",
+        }
+    }
 }
 
 impl fmt::Display for Number {
@@ -274,7 +281,7 @@ impl Value {
         match self {
             Value::Null => "Null",
             Value::Bool(_) => "Boolean",
-            Value::Number(_) => "Number",
+            Value::Number(num) => num.value_type(),
             Value::String(_) => "String",
             Value::Array(_) => "Array",
             Value::Object(_) => "Object",
