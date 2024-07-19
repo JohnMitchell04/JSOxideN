@@ -328,7 +328,7 @@ impl<'a> Parser<'a> {
                 match exp {
                     Some(i) => {
                         if i > 0f64 {
-                            match int.checked_mul(i as i64) {
+                            match int.checked_mul(i as i128) {
                                 Some(j) => Ok(Value::Number(Number::Int(j))),
                                 None => Ok(Value::Number(Number::Float(int as f64 * i))),
                             }
@@ -343,7 +343,7 @@ impl<'a> Parser<'a> {
     }
 
     /// Integer rule.
-    fn integer(&mut self) -> Result<i64, ParseError> {
+    fn integer(&mut self) -> Result<i128, ParseError> {
         let mut neg = false;
         match self.input.peek() {
             Some('-') => {
@@ -359,7 +359,7 @@ impl<'a> Parser<'a> {
 
                 if digits.chars().nth(0) == Some('0') && digits.len() > 1 { return Err((ParseErrorType::InvalidInteger, self.col ,self.line, digits).into()) }
 
-                match digits.parse::<i64>() {
+                match digits.parse::<i128>() {
                     Ok(mut i) => {
                         if neg { i = -i; }
                         Ok(i)

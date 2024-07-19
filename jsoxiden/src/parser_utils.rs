@@ -1,5 +1,34 @@
 use std::{collections::BTreeMap, error::Error, fmt, ops::Index};
 
+// If macro_metavar_expr_concat gets stabilised, this macro could be used to generate the boilerplate for the value methods
+// macro_rules! value_boilerplate {
+//     ( $( $variant:ident, $type:ty ),* ) => {
+//         pub fn macro_metavar_expr_concat(as_, $variant)(&self) -> Result<&type, ValueError> {
+//             match self {
+//                 Value::$variant(ref b) => Ok(b),
+//                 _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
+//             }
+//         }
+//     };
+// }
+
+macro_rules! value_integer_boilerplate {
+    ( $( $type:ty ),* ) => {
+        $(
+            impl TryFrom<Value> for $type {
+                type Error = ValueError;
+
+                fn try_from(value: Value) -> Result<Self, Self::Error> {
+                    match value {
+                        Value::Number(Number::Int(n)) => Ok(n as $type),
+                        _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+                    }
+                }
+            }
+        )*
+    };
+}
+
 #[derive(Debug)]
 pub enum DeserialiseError {
     ParseError(ParseError),
@@ -31,8 +60,24 @@ pub trait Deserialise {
 /// Number type for floats and integers.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum Number {
-    Int(i64),
+    Int(i128),
     Float(f64),
+}
+
+impl Number {
+    pub fn is_int(&self) -> bool {
+        match self {
+            Number::Int(_) => true,
+            Number::Float(_) => false,
+        }
+    }
+
+    pub fn is_float(&self) -> bool {
+        match self {
+            Number::Int(_) => false,
+            Number::Float(_) => true,
+        }
+    }
 }
 
 impl fmt::Display for Number {
@@ -165,15 +210,30 @@ impl TryFrom<Value> for bool {
     }
 }
 
-impl TryFrom<Value> for Number {
+value_integer_boilerplate!(i8, i16, i32, i64, i128);
+
+impl TryFrom<Value> for f32 {
     type Error = ValueError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Number(n) => Ok(n),
+            Value::Number(Number::Float(f)) => Ok(f as f32),
             _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
         }
     }
+
+}
+
+impl TryFrom<Value> for f64 {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Number(Number::Float(f)) => Ok(f as f64),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+
 }
 
 impl TryFrom<Value> for String {
