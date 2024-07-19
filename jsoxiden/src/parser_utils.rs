@@ -1,0 +1,339 @@
+use std::{collections::BTreeMap, error::Error, fmt, ops::Index};
+
+#[derive(Debug)]
+pub enum DeserialiseError {
+    ParseError(ParseError),
+    ValueError(ValueError),
+}
+
+impl From<ParseError> for DeserialiseError {
+    fn from(error: ParseError) -> Self {
+        DeserialiseError::ParseError(error)
+    }
+}
+
+impl From<ValueError> for DeserialiseError {
+    fn from(error: ValueError) -> Self {
+        DeserialiseError::ValueError(error)
+    }
+}
+
+impl fmt::Display for DeserialiseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        write!(f, "{}", self)
+    }
+}
+
+pub trait Deserialise {
+    fn from_str(input: &str) -> Result<Self, DeserialiseError> where Self: Sized;
+}
+
+/// Number type for floats and integers.
+#[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
+pub enum Number {
+    Int(i64),
+    Float(f64),
+}
+
+impl fmt::Display for Number {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Number::Int(i) => write!(f, "{}", i),
+            Number::Float(fl) => write!(f, "{}", fl),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ValueErrorType {
+    IncorrectType,
+    InvalidKey
+}
+
+impl fmt::Display for ValueErrorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ValueErrorType::IncorrectType => write!(f, "Incorrect type"),
+            ValueErrorType::InvalidKey => write!(f, "Invalid key"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ValueError {
+    error_type: ValueErrorType,
+    info: String,
+}
+
+impl fmt::Display for ValueError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self.error_type {
+            ValueErrorType::IncorrectType => write!(f, "This value is a: {}, not an object", self.info),
+            ValueErrorType::InvalidKey => write!(f, "Key: {}, is not present", self.info),
+        }
+    }
+}
+
+impl Error for ValueError {}
+
+impl From<(ValueErrorType, String)> for ValueError {
+    fn from((error_type, info): (ValueErrorType, String)) -> Self {
+        ValueError { error_type, info }
+    }
+}
+
+/// All possible JSON value types.
+#[derive(Debug, Clone)]
+pub enum Value {
+    Null,
+    Bool(bool),
+    Number(Number),
+    String(String),
+    Array(Vec<Value>),
+    Object(BTreeMap<String, Value>)
+}
+
+impl Value {
+    pub fn as_bool(&self) -> Result<&bool, ValueError> {
+        match self {
+            Value::Bool(ref b) => Ok(b),
+            _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
+        }
+    }
+
+    pub fn as_number(&self) -> Result<&Number, ValueError> {
+        match self {
+            Value::Number(ref n) => Ok(n),
+            _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
+        }
+    }
+
+    pub fn as_str(&self) -> Result<&str, ValueError> {
+        match self {
+            Value::String(ref s) => Ok(s),
+            _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
+        }
+    }
+
+    pub fn as_array(&self) -> Result<&Vec<Value>, ValueError> {
+        match self {
+            Value::Array(ref a) => Ok(a),
+            _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
+        }
+    }
+
+    pub fn as_map(&self) -> Result<&BTreeMap<String, Value>, ValueError> {
+        match self {
+            Value::Object(ref o) => Ok(o),
+            _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
+        }
+    }
+
+    pub fn get(&self, key: &str) -> Result<&Value, ValueError> {
+        match self {
+            Value::Object(map) => {
+                match map.get(key) {
+                    Some(value) => Ok(value),
+                    None => Err((ValueErrorType::InvalidKey, key.to_string()).into()),
+                }
+            },
+            _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
+        }
+    }
+
+    pub fn remove(&mut self, key: &str) -> Result<Value, ValueError> {
+        match self {
+            Value::Object(ref mut map) => {
+                match map.remove(key) {
+                    Some(value) => Ok(value),
+                    None => Err((ValueErrorType::InvalidKey, key.to_string()).into()),
+                }
+            }
+            _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
+        }
+    }
+}
+
+impl TryFrom<Value> for bool {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Bool(b) => Ok(b),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+}
+
+impl TryFrom<Value> for Number {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Number(n) => Ok(n),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+}
+
+impl TryFrom<Value> for String {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::String(s) => Ok(s),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+}
+
+impl TryFrom<Value> for Vec<Value> {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Array(v) => Ok(v),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+}
+
+impl TryFrom<Value> for BTreeMap<String, Value> {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Object(o) => Ok(o),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+}
+
+impl Value {
+    pub fn value_type(&self) -> &'static str {
+        match self {
+            Value::Null => "Null",
+            Value::Bool(_) => "Boolean",
+            Value::Number(_) => "Number",
+            Value::String(_) => "String",
+            Value::Array(_) => "Array",
+            Value::Object(_) => "Object",
+        }
+    }
+}
+
+// TODO: Re-write to be prettier
+impl fmt::Display for Value {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            Value::Null => write!(f, "null"),
+            Value::Bool(b) => write!(f, "{}", b),
+            Value::Number(n) => write!(f, "{}", n),
+            Value::String(s) => write!(f, "\"{}\"", s),
+            Value::Array(a) => {
+                let elements = a.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(", ");
+                write!(f, "[{}]", elements)
+            },
+            Value::Object(o) => {
+                let entries = o.iter().map(|(k, v)| format!("\"{}\": {}", k, v)).collect::<Vec<_>>().join(", ");
+                write!(f, "{{{}}}", entries)
+            },
+        }
+    }
+}
+
+impl Index<&str> for Value {
+    type Output = Value;
+
+    fn index(&self, key: &str) -> &Self::Output {
+        match self.get(key) {
+            Ok(v) => v,
+            Err(err) => panic!("{}", err),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub enum ParseErrorType {
+    UnexpectedCharacter,
+    UnexpectedEOF,
+    InvalidHex,
+    InvalidUnicode,
+    InvalidInteger,
+    InvalidFraction,
+    InvalidExponent,
+    NumberOutOfBounds,
+    InvalidValue,
+    ExpectedEOF,
+    RecursionDepthReached,
+    IOError,
+    InvalidSurrogatePair
+}
+
+impl fmt::Display for ParseErrorType {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match self {
+            ParseErrorType::UnexpectedCharacter => write!(f, "Unexpected character encountered"),
+            ParseErrorType::UnexpectedEOF => write!(f, "Unexpected EOF encountered"),
+            ParseErrorType::InvalidHex => write!(f, "Invalid hex number encountered"),
+            ParseErrorType::InvalidUnicode => write!(f, "Invalid unicode literal encountered"),
+            ParseErrorType::InvalidInteger => write!(f, "Could not parse integer"),
+            ParseErrorType::InvalidFraction => write!(f, "Could not parse fractional part"),
+            ParseErrorType::InvalidExponent => write!(f, "Could not parse exponent"),
+            ParseErrorType::InvalidValue => write!(f, "Invalid bollean/null literal"),
+            ParseErrorType::InvalidSurrogatePair => write!(f, "The surrogate pair is invalid"),
+            ParseErrorType::NumberOutOfBounds => write!(f, "Number cannot be stored in an double"),
+            ParseErrorType::ExpectedEOF => write!(f, "Expected EOF but character encountered"),
+            ParseErrorType::RecursionDepthReached => write!(f, "The maximum recursion depth was reached"),
+            ParseErrorType::IOError => write!(f, "Couldn't read file"),
+        }
+    }
+}
+
+#[derive(Debug)]
+pub struct ParseError {
+    error_type: ParseErrorType,
+    col: usize,
+    line: usize,
+    value: Option<String>,
+}
+
+impl fmt::Display for ParseError {
+    fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
+        match &self.value {
+            Some(string) => write!(f, "Error: {}, Column: {}, On line: {}, around: {}", self.error_type, self.col, self.line, string),
+            None => write!(f, "Error: {}, Column: {} On line: {}", self.error_type, self.col, self.line),
+        }
+    }
+}
+
+impl Error for ParseError {}
+
+impl From<(ParseErrorType, usize, usize, char)> for ParseError {
+    fn from((error_type, col, line, character): (ParseErrorType, usize, usize, char)) -> Self {
+        ParseError { error_type, col, line, value: Some(String::from(character)) }
+    }
+}
+
+impl From<(ParseErrorType, usize, usize)> for ParseError {
+    fn from((error_type, col, line): (ParseErrorType, usize, usize)) -> Self {
+        ParseError { error_type, col, line, value: None }
+    }
+}
+
+impl From<(ParseErrorType, usize, usize, String)> for ParseError {
+    fn from((error_type, col, line, string): (ParseErrorType, usize, usize, String)) -> Self {
+        ParseError { error_type, col, line, value: Some(string) }
+    }
+}
+
+macro_rules! unexpected_boilerplate {
+    ($v:ident, $pat:pat, $e:expr, $c:expr, $l:expr) => {
+        match $v {
+            Some(ch) if matches!(ch, $pat) => $e,
+            Some(ch) => return Err((ParseErrorType::UnexpectedCharacter, $c, $l, ch).into()),
+            None => return Err((ParseErrorType::UnexpectedEOF, $c, $l).into()),
+        }
+    };
+}
+pub(super) use unexpected_boilerplate;

@@ -31,21 +31,36 @@ fn generate_deserialise_impl(name: Ident, data: DataStruct) -> TokenStream {
         let field_name = field.ident.unwrap();
         quote! {
             #field_name:
-                value.remove(stringify!(#field_name))
-                .ok_or_else(|| format!("Missing field: {}", stringify!(#field_name)))?
-                .try_into()
-                .map_err(|_| format!("Failed to parse field: {}", stringify!(#field_name)))?
+                value.remove(stringify!(#field_name))?
+                    .try_into()?
         }.into()
     });
 
-    let output = quote! {
+    let temp = fields_vals.clone();
+    let impl_output = quote! {
+        impl TryFrom<jsoxiden::Value> for #name {
+            type Error = jsoxiden::DeserialiseError;
+
+            fn try_from(mut value: jsoxiden::Value) -> Result<Self, Self::Error> {
+                Ok(Self { #(#fields_vals),* })
+            }
+        }
+    };
+
+    let fields_vals = temp;
+    let des_output = quote! {
         impl Deserialise for #name {
-            fn from_str(input: &str) -> Result<Self, jsoxiden::ParseError> {
+            fn from_str(input: &str) -> Result<Self, jsoxiden::DeserialiseError> {
                 let mut value = jsoxiden::from_str(input)?;
 
                 Ok(Self { #(#fields_vals),* })
             }
         }
+    };
+
+    let output = quote! {
+        #impl_output
+        #des_output
     };
 
     proc_macro::TokenStream::from(output)

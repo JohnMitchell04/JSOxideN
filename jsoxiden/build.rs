@@ -19,6 +19,10 @@ fn main() {
             _ => Some(c),
         }).collect::<String>();
 
+        if test_name == "LICENSE" {
+            continue;
+        }
+
         let succeed;
         match test_name.chars().nth(0) {
             Some('n') => succeed = false,
