@@ -1,6 +1,12 @@
 use core::fmt;
 use std::{collections::BTreeMap, error::Error, iter::Peekable, ops::Index, str::Chars};
 
+pub use macros::*;
+
+pub trait Deserialise {
+    fn from_str(input: &str) -> Self;
+}
+
 /// Number type for floats and integers.
 #[derive(Debug, Clone, Copy, PartialEq, PartialOrd)]
 pub enum Number {
