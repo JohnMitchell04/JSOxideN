@@ -49,7 +49,7 @@ fn generate_tryfrom_impl(name: Ident, fields: Punctuated<Field, Comma>) -> proc_
     });
 
     quote! {
-        impl TryFromValue for #name {
+        impl jsoxiden::TryFromValue for #name {
             fn try_from_value(mut value: jsoxiden::Value) -> Result<Self, jsoxiden::ValueError> {
                 Ok(Self { #(#fields_vals),* })
             }
