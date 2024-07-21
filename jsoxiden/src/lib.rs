@@ -1,29 +1,102 @@
+//! JSON deserialiser for Rust. 
+//! 
+//! Parses JSON strings and files and provides a clean [`Value`] type to access the data.
+//! Users may also derive the [`Deserialise`] trait for their structs to provide easier strongly typed access.
+//! 
+//! # Examples
+//! 
+//! Parsing and accessing via [`Value`]:
+//! ```rust
+//! use jsoxiden
+//! 
+//! fn main() {
+//!     let json = r#"
+//!        {
+//!             "name": "John Doe",
+//!             "age": 43,
+//!             "is_student": false,
+//!             "address": {
+//!                 "street": "123 Fake St",
+//!                 "city": "Springfield",
+//!                 "postcode": "12345"
+//!             }
+//!         }
+//!     "#;
+//!     let value = jsoxiden::from_str(json).unwrap();
+//!     let name = value["name"].as_str().unwrap();
+//!     println!("{}", name);
+//! }
+//! ```
+//! 
+//! Parsing and accessing via [`Deserialise`]:
+//! ```rust
+//! use jsoxiden::Deserialise;
+//! 
+//! #[derive(Deserialise)]
+//! struct Address {
+//!     street: String,
+//!     city: String,
+//!     postcode: String,
+//! }
+//! 
+//! #[derive(Deserialise)]
+//! struct Person {
+//!     name: String,
+//!     age: i32,
+//!     is_student: bool,
+//!     address: Address,
+//! }
+//! 
+//! fn main() {
+//!     let json = r#"
+//!        {
+//!             "name": "John Doe",
+//!             "age": 43,
+//!             "is_student": false,
+//!             "address": {
+//!                 "street": "123 Fake St",
+//!                 "city": "Springfield",
+//!                 "postcode": "12345"
+//!             }
+//!         }
+//!     "#;
+//! 
+//!     let person = Person::from_str(json).unwrap();
+//!     println!("{}", person.name);
+//! }
+//! ```
+
 use std::{collections::BTreeMap, error::Error, iter::Peekable, str::Chars};
 
 pub mod parser_utils;
 pub use macros::*;
 pub use parser_utils::*;
 
-/// Parse a JSON string and return a Value.
+/// Parse a JSON string and return a [`Value`].
+/// 
+/// # Arguments:
+/// * `input` - The JSON string.
+/// 
+/// # Returns:
+/// * `Result<Value, ParseError>` - The parsed JSON value or a [`ParseError`] if the JSON is invalid.
 pub fn from_str(input: &str) -> Result<Value, ParseError> {
     let mut parser = Parser::new(input);
     return parser.parse()
 }
 
-/// Parse JSON from a file and return a Value.
+/// Parse JSON from a file and return a [`Value`].
 /// 
 /// # Arguments:
 /// * `filepath` - The path to the file.
 /// 
 /// # Returns:
-/// * `Result<Value, Box<dyn Error>>` - The parsed JSON value or an `io::Error` if the file could not be read or a `ParseError` if the JSON is invalid.
+/// * `Result<Value, Box<dyn Error>>` - The parsed JSON value or an [`std::io::Error`] if the file could not be read or a [`ParseError`] if the JSON is invalid.
 pub fn from_file(filepath: &str) -> Result<Value, Box<dyn Error>> {
     let input = std::fs::read_to_string(filepath)?;
     let mut parser = Parser::new(&input);
     return Ok(parser.parse()?)
 }
 
-/// Parser struct.
 struct Parser<'a> {
     input: Peekable<Chars<'a>>,
     col: usize,
@@ -32,14 +105,14 @@ struct Parser<'a> {
 }
 
 impl<'a> Parser<'a> {
-    /// Create new parser.
+    /// Create new parser from the provided string.
     fn new(input: &'a str) -> Parser {
         let iter = input.chars().peekable();
 
         Parser { input: iter, col: 1, line: 1, recurse_depth: 0 }
     }
 
-    /// Get the next character in the input string.
+    /// Get the next character in the input string and update column and line counters.
     fn consume(&mut self) -> Option<char> {
         let char = self.input.next();
         self.col += 1;

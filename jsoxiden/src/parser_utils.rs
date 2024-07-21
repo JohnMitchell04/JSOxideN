@@ -35,6 +35,8 @@ macro_rules! value_integer_boilerplate {
     };
 }
 
+/// An error that can occur when deserialising a JSON string. Could be a [`ParseError`] i.e. the JSON data is incorrectly formatted,
+/// or a [`ValueError`] i.e. the JSON data is correctly formatted but the value cannot be converted to the desired type.
 #[derive(Debug)]
 pub enum DeserialiseError {
     ParseError(ParseError),
@@ -59,7 +61,16 @@ impl fmt::Display for DeserialiseError {
     }
 }
 
+/// A trait that indicates the type can be deserialised from a JSON string.
 pub trait Deserialise {
+
+    /// Deserialise a JSON string into the desired type.
+    /// 
+    /// # Arguments:
+    /// * `input` - The JSON string to deserialise.
+    /// 
+    /// # Returns:
+    /// The deserialised value or a [`DeserialiseError`].
     fn from_str(input: &str) -> Result<Self, DeserialiseError> where Self: Sized;
 }
 
@@ -85,7 +96,7 @@ impl Number {
         }
     }
 
-    pub fn value_type(&self) -> &'static str {
+    fn value_type(&self) -> &'static str {
         match self {
             Number::Int(_) => "Integer",
             Number::Float(_) => "Float",
@@ -102,6 +113,7 @@ impl fmt::Display for Number {
     }
 }
 
+/// Possible error types that can occur when trying to convert a JSON value to a Rust type.
 #[derive(Debug)]
 pub enum ValueErrorType {
     IncorrectType,
@@ -121,6 +133,7 @@ impl fmt::Display for ValueErrorType {
     }
 }
 
+/// An error that occurs when trying to convert a JSON value to a Rust type. 
 #[derive(Debug)]
 pub struct ValueError {
     error_type: ValueErrorType,
@@ -193,6 +206,14 @@ impl Value {
         }
     }
 
+    /// Retrieves the value associated with the key as a reference.
+    /// 
+    /// # Arguments:
+    /// * `key` - The key to retrieve.
+    /// 
+    /// # Returns:
+    /// The value associated with the key, a [`ValueErrorType::IncorrectType`] error if the value is not an object
+    /// or a [`ValueErrorType::InvalidKey`] error if the key is not present.
     pub fn get(&self, key: &str) -> Result<&Value, ValueError> {
         match self {
             Value::Object(map) => {
@@ -205,6 +226,14 @@ impl Value {
         }
     }
 
+    /// Retieves the value associated with the key and removes it from the object.
+    /// 
+    /// # Arguments:
+    /// * `key` - The key to remove.
+    /// 
+    /// # Returns:
+    /// The value associated with the key, a [`ValueErrorType::IncorrectType`] error if the value is not an object
+    /// or a [`ValueErrorType::InvalidKey`] error if the key is not present.
     pub fn remove(&mut self, key: &str) -> Result<Value, ValueError> {
         match self {
             Value::Object(ref mut map) => {
@@ -216,8 +245,20 @@ impl Value {
             _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
         }
     }
+
+    fn value_type(&self) -> &'static str {
+        match self {
+            Value::Null => "Null",
+            Value::Bool(_) => "Boolean",
+            Value::Number(num) => num.value_type(),
+            Value::String(_) => "String",
+            Value::Array(_) => "Array",
+            Value::Object(_) => "Object",
+        }
+    }
 }
 
+/// A trait that indicates the type can be converted from a [`Value`] type.
 pub trait TryFromValue: Sized {
     fn try_from_value(value: Value) -> Result<Self, ValueError>;
 }
@@ -291,19 +332,6 @@ where
     }
 }
 
-impl Value {
-    pub fn value_type(&self) -> &'static str {
-        match self {
-            Value::Null => "Null",
-            Value::Bool(_) => "Boolean",
-            Value::Number(num) => num.value_type(),
-            Value::String(_) => "String",
-            Value::Array(_) => "Array",
-            Value::Object(_) => "Object",
-        }
-    }
-}
-
 // TODO: Re-write to be prettier
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
@@ -335,6 +363,7 @@ impl Index<&str> for Value {
     }
 }
 
+/// Error types that can occur when parsing a JSON string.
 #[derive(Debug)]
 pub enum ParseErrorType {
     UnexpectedCharacter,
@@ -372,6 +401,7 @@ impl fmt::Display for ParseErrorType {
     }
 }
 
+/// An error that occurs when parsing a JSON string.
 #[derive(Debug)]
 pub struct ParseError {
     error_type: ParseErrorType,
