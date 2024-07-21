@@ -15,30 +15,10 @@ use std::{collections::BTreeMap, error::Error, fmt, ops::Index};
 macro_rules! value_integer_boilerplate {
     ( $( $type:ty ),* ) => {
         $(
-            impl TryFrom<Value> for $type {
-                type Error = ValueError;
-
-                fn try_from(value: Value) -> Result<Self, Self::Error> {
+            impl TryFromValue for $type {
+                fn try_from_value(value: Value) -> Result<Self, ValueError> {
                     match value {
                         Value::Number(Number::Int(n)) => Ok(n as $type),
-                        _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
-                    }
-                }
-            }
-        )*
-    };
-}
-
-macro_rules! value_option_integer_boilerplate {
-    ( $( $type:ty ),* ) => {
-        $(
-            impl TryFrom<Value> for Option<$type> {
-                type Error = ValueError;
-
-                fn try_from(value: Value) -> Result<Self, Self::Error> {
-                    match value {
-                        Value::Null => Ok(None),
-                        Value::Number(Number::Int(n)) => Ok(Some(n as $type)),
                         _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
                     }
                 }
@@ -224,10 +204,18 @@ impl Value {
     }
 }
 
-impl TryFrom<Value> for bool {
-    type Error = ValueError;
+pub trait TryFromValue: Sized {
+    fn try_from_value(value: Value) -> Result<Self, ValueError>;
+}
 
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+impl Value {
+    pub fn try_from_value<T: TryFromValue>(self) -> Result<T, ValueError> {
+        T::try_from_value(self)
+    }
+}
+
+impl TryFromValue for bool {
+    fn try_from_value(value: Value) -> Result<Self, ValueError> {
         match value {
             Value::Bool(b) => Ok(b),
             _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
@@ -237,10 +225,8 @@ impl TryFrom<Value> for bool {
 
 value_integer_boilerplate!(i8, i16, i32, i64, i128);
 
-impl TryFrom<Value> for f32 {
-    type Error = ValueError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+impl TryFromValue for f32 {
+    fn try_from_value(value: Value) -> Result<Self, ValueError> {
         match value {
             Value::Number(Number::Float(f)) => Ok(f as f32),
             _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
@@ -249,10 +235,8 @@ impl TryFrom<Value> for f32 {
 
 }
 
-impl TryFrom<Value> for f64 {
-    type Error = ValueError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+impl TryFromValue for f64 {
+    fn try_from_value(value: Value) -> Result<Self, ValueError> {
         match value {
             Value::Number(Number::Float(f)) => Ok(f as f64),
             _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
@@ -261,10 +245,8 @@ impl TryFrom<Value> for f64 {
 
 }
 
-impl TryFrom<Value> for String {
-    type Error = ValueError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+impl TryFromValue for String {
+    fn try_from_value(value: Value) -> Result<Self, ValueError> {
         match value {
             Value::String(s) => Ok(s),
             _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
@@ -272,81 +254,25 @@ impl TryFrom<Value> for String {
     }
 }
 
-impl<T> TryFrom<Value> for Vec<T>
-    where T: TryFrom<Value, Error=ValueError>
+impl<T> TryFromValue for Vec<T>
+    where T: TryFromValue
 {
-    type Error = ValueError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+    fn try_from_value(value: Value) -> Result<Self, ValueError> {
         match value {
-            Value::Array(v) => Ok(v.into_iter().map(|e| T::try_from(e).unwrap()).collect()),
+            Value::Array(v) => Ok(v.into_iter().map(|e| T::try_from_value(e).unwrap()).collect()),
             _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
         }
     }
 }
 
-impl TryFrom<Value> for Option<bool> {
-    type Error = ValueError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        match value {
-            Value::Null => Ok(None),
-            Value::Bool(b) => Ok(Some(b)),
-            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
-        }
-    }
-}
-
-value_option_integer_boilerplate!(i8, i16, i32, i64, i128);
-
-impl TryFrom<Value> for Option<f32> {
-    type Error = ValueError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        match value {
-            Value::Null => Ok(None),
-            Value::Number(Number::Float(f)) => Ok(Some(f as f32)),
-            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
-        }
-    }
-
-}
-
-impl TryFrom<Value> for Option<f64> {
-    type Error = ValueError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        match value {
-            Value::Null => Ok(None),
-            Value::Number(Number::Float(f)) => Ok(Some(f as f64)),
-            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
-        }
-    }
-
-}
-
-impl TryFrom<Value> for Option<String> {
-    type Error = ValueError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
-        match value {
-            Value::Null => Ok(None),
-            Value::String(s) => Ok(Some(s)),
-            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
-        }
-    }
-}
-
-impl<T> TryFrom<Value> for Option<Vec<T>>
-    where T: TryFrom<Value, Error=ValueError>
+impl<T> TryFromValue for Option<T>
+where
+    T: TryFromValue,
 {
-    type Error = ValueError;
-
-    fn try_from(value: Value) -> Result<Self, Self::Error> {
+    fn try_from_value(value: Value) -> Result<Self, ValueError> {
         match value {
             Value::Null => Ok(None),
-            Value::Array(v) => Ok(Some(v.into_iter().map(|e| T::try_from(e).unwrap()).collect())),
-            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+            _ => T::try_from_value(value).map(Some),
         }
     }
 }

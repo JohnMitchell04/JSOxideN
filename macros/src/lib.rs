@@ -27,13 +27,11 @@ fn generate_deserialise_impl(name: Ident, data: DataStruct) -> TokenStream {
     };
 
     let impl_output = generate_tryfrom_impl(name.clone(), fields.clone());
-    let impl_opt_output = generate_tryfrom_opt_impl(name.clone(), fields.clone());
     let des_output = generate_deserialise_method_impl(name.clone(), fields.clone());
     
 
     let output = quote! {
         #impl_output
-        #impl_opt_output
         #des_output
     };
 
@@ -46,37 +44,13 @@ fn generate_tryfrom_impl(name: Ident, fields: Punctuated<Field, Comma>) -> proc_
         quote! {
             #field_name:
                 value.remove(stringify!(#field_name))?
-                    .try_into()?
+                    .try_from_value()?
         }.into()
     });
 
     quote! {
-        impl TryFrom<jsoxiden::Value> for #name {
-            type Error = jsoxiden::ValueError;
-
-            fn try_from(mut value: jsoxiden::Value) -> Result<Self, Self::Error> {
-                Ok(Self { #(#fields_vals),* })
-            }
-        }
-    }
-}
-
-fn generate_tryfrom_opt_impl(name: Ident, fields: Punctuated<Field, Comma>) -> proc_macro2::TokenStream {
-    let fields_vals = fields.into_iter().filter_map(|field| {
-        let field_name = field.ident.unwrap();
-        quote! {
-            #field_name:
-                value.remove(stringify!(#field_name))
-                    .unwrap_or(jsoxiden::Value::Null)
-                    .try_into()?
-        }.into()
-    });
-
-    quote! {
-        impl TryFrom<jsoxiden::Value> for Option<#name> {
-            type Error = jsoxiden::ValueError;
-
-            fn try_from(value: jsoxiden::Value) -> Result<Self, Self::Error> {
+        impl TryFromValue for #name {
+            fn try_from_value(mut value: jsoxiden::Value) -> Result<Self, jsoxiden::ValueError> {
                 Ok(Self { #(#fields_vals),* })
             }
         }
@@ -89,7 +63,7 @@ fn generate_deserialise_method_impl(name: Ident, fields: Punctuated<Field, Comma
         quote! {
             #field_name:
                 value.remove(stringify!(#field_name))?
-                    .try_into()?
+                    .try_from_value()?
         }.into()
     });
 
