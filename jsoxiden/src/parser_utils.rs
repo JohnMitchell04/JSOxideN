@@ -29,6 +29,24 @@ macro_rules! value_integer_boilerplate {
     };
 }
 
+macro_rules! value_option_integer_boilerplate {
+    ( $( $type:ty ),* ) => {
+        $(
+            impl TryFrom<Value> for Option<$type> {
+                type Error = ValueError;
+
+                fn try_from(value: Value) -> Result<Self, Self::Error> {
+                    match value {
+                        Value::Null => Ok(None),
+                        Value::Number(Number::Int(n)) => Ok(Some(n as $type)),
+                        _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+                    }
+                }
+            }
+        )*
+    };
+}
+
 #[derive(Debug)]
 pub enum DeserialiseError {
     ParseError(ParseError),
@@ -254,23 +272,80 @@ impl TryFrom<Value> for String {
     }
 }
 
-impl TryFrom<Value> for Vec<Value> {
+impl<T> TryFrom<Value> for Vec<T>
+    where T: TryFrom<Value, Error=ValueError>
+{
     type Error = ValueError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Array(v) => Ok(v),
+            Value::Array(v) => Ok(v.into_iter().map(|e| T::try_from(e).unwrap()).collect()),
             _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
         }
     }
 }
 
-impl TryFrom<Value> for BTreeMap<String, Value> {
+impl TryFrom<Value> for Option<bool> {
     type Error = ValueError;
 
     fn try_from(value: Value) -> Result<Self, Self::Error> {
         match value {
-            Value::Object(o) => Ok(o),
+            Value::Null => Ok(None),
+            Value::Bool(b) => Ok(Some(b)),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+}
+
+value_option_integer_boilerplate!(i8, i16, i32, i64, i128);
+
+impl TryFrom<Value> for Option<f32> {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Null => Ok(None),
+            Value::Number(Number::Float(f)) => Ok(Some(f as f32)),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+
+}
+
+impl TryFrom<Value> for Option<f64> {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Null => Ok(None),
+            Value::Number(Number::Float(f)) => Ok(Some(f as f64)),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+
+}
+
+impl TryFrom<Value> for Option<String> {
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Null => Ok(None),
+            Value::String(s) => Ok(Some(s)),
+            _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
+        }
+    }
+}
+
+impl<T> TryFrom<Value> for Option<Vec<T>>
+    where T: TryFrom<Value, Error=ValueError>
+{
+    type Error = ValueError;
+
+    fn try_from(value: Value) -> Result<Self, Self::Error> {
+        match value {
+            Value::Null => Ok(None),
+            Value::Array(v) => Ok(Some(v.into_iter().map(|e| T::try_from(e).unwrap()).collect())),
             _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
         }
     }
@@ -302,7 +377,7 @@ impl fmt::Display for Value {
                 write!(f, "[{}]", elements)
             },
             Value::Object(o) => {
-                let entries = o.iter().map(|(k, v)| format!("\"{}\": {}", k, v)).collect::<Vec<_>>().join(", ");
+                let entries = o.iter().map(|(k, v)| format!("\"{}\": {}", k, v)).collect::<Vec<_>>().join(",\n");
                 write!(f, "{{{}}}", entries)
             },
         }
