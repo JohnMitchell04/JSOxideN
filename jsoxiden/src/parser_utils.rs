@@ -18,7 +18,15 @@ macro_rules! value_integer_boilerplate {
             impl TryFromValue for $type {
                 fn try_from_value(value: Value) -> Result<Self, ValueError> {
                     match value {
-                        Value::Number(Number::Int(n)) => Ok(n as $type),
+                        Value::Number(Number::Int(n)) => {
+                            if n >= <$type>::MIN as i128 && n <= <$type>::MAX as i128 {
+                                Ok(n as $type)
+                            } else if n >= <$type>::MAX as i128 {
+                                Err((ValueErrorType::NumericOverflow, n.to_string()).into())
+                            } else {
+                                Err((ValueErrorType::NegativeOverflow, n.to_string()).into())
+                            }
+                        },
                         _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
                     }
                 }
@@ -97,7 +105,9 @@ impl fmt::Display for Number {
 #[derive(Debug)]
 pub enum ValueErrorType {
     IncorrectType,
-    InvalidKey
+    InvalidKey,
+    NumericOverflow,
+    NegativeOverflow,
 }
 
 impl fmt::Display for ValueErrorType {
@@ -105,6 +115,8 @@ impl fmt::Display for ValueErrorType {
         match self {
             ValueErrorType::IncorrectType => write!(f, "Incorrect type"),
             ValueErrorType::InvalidKey => write!(f, "Invalid key"),
+            ValueErrorType::NumericOverflow => write!(f, "Number is too large for destination type"),
+            ValueErrorType::NegativeOverflow => write!(f, "Attempted to convert a negative number to an unsigned type"),
         }
     }
 }
@@ -120,6 +132,8 @@ impl fmt::Display for ValueError {
         match self.error_type {
             ValueErrorType::IncorrectType => write!(f, "This value is a: {}, not an object", self.info),
             ValueErrorType::InvalidKey => write!(f, "Key: {}, is not present", self.info),
+            ValueErrorType::NumericOverflow => write!(f, "Number: {}, is too large for destination type", self.info),
+            ValueErrorType::NegativeOverflow => write!(f, "Number: {}, is negative and cannot be converted to an unsigned type", self.info),
         }
     }
 }
@@ -223,7 +237,7 @@ impl TryFromValue for bool {
     }
 }
 
-value_integer_boilerplate!(i8, i16, i32, i64, i128);
+value_integer_boilerplate!(i8, u8, i16, u16, i32, u32, i64, u64, i128, u128);
 
 impl TryFromValue for f32 {
     fn try_from_value(value: Value) -> Result<Self, ValueError> {
