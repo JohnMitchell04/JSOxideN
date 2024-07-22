@@ -269,6 +269,12 @@ impl Value {
     }
 }
 
+impl TryFromValue for Value {
+    fn try_from_value(value: Value) -> Result<Self, ValueError> {
+        Ok(value)
+    }
+}
+
 impl TryFromValue for bool {
     fn try_from_value(value: Value) -> Result<Self, ValueError> {
         match value {
