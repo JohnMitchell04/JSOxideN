@@ -43,7 +43,8 @@ fn generate_tryfrom_impl(name: Ident, fields: Punctuated<Field, Comma>) -> proc_
         let field_name = field.ident.unwrap();
         quote! {
             #field_name:
-                value.remove(stringify!(#field_name))?
+                value.remove(stringify!(#field_name))
+                    .unwrap_or(jsoxiden::Value::Null)
                     .try_from_value()?
         }.into()
     });
@@ -62,7 +63,8 @@ fn generate_deserialise_method_impl(name: Ident, fields: Punctuated<Field, Comma
         let field_name = field.ident.unwrap();
         quote! {
             #field_name:
-                value.remove(stringify!(#field_name))?
+                value.remove(stringify!(#field_name))
+                    .unwrap_or(jsoxiden::Value::Null)
                     .try_from_value()?
         }.into()
     });
