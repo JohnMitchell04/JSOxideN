@@ -51,4 +51,4 @@ This project is licensed under the MIT License. See the [LICENSE](LICENSE) file 
 
 ---
 
-This project represents a personal educational journey into the depths of Rust, pushing the boundaries of my knowledge and skills with the language.
+This project represents a personal educational journey into areas of Rust I had not previously been exposed to, further pushing the boundaries of my knowledge and skills with the language.
