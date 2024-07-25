@@ -7,25 +7,24 @@
 //! 
 //! Parsing and accessing via [`Value`]:
 //! ```rust
-//! use jsoxiden
-//! 
-//! fn main() {
-//!     let json = r#"
-//!        {
-//!             "name": "John Doe",
-//!             "age": 43,
-//!             "is_student": false,
-//!             "address": {
-//!                 "street": "123 Fake St",
-//!                 "city": "Springfield",
-//!                 "postcode": "12345"
-//!             }
+//! use jsoxiden;
+//!
+//! let json = r#"
+//!    {
+//!         "name": "John Doe",
+//!         "age": 43,
+//!         "is_student": false,
+//!         "address": {
+//!             "street": "123 Fake St",
+//!             "city": "Springfield",
+//!             "postcode": "12345"
 //!         }
-//!     "#;
-//!     let value = jsoxiden::from_str(json).unwrap();
-//!     let name = value["name"].as_str().unwrap();
-//!     println!("{}", name);
-//! }
+//!     }
+//! "#;
+//! let value = jsoxiden::from_str(json).unwrap();
+//! let name = value["name"].as_str().unwrap();
+//! println!("{}", name);
+//!
 //! ```
 //! 
 //! Parsing and accessing via [`Deserialise`]:
@@ -47,23 +46,23 @@
 //!     address: Address,
 //! }
 //! 
-//! fn main() {
-//!     let json = r#"
-//!        {
-//!             "name": "John Doe",
-//!             "age": 43,
-//!             "is_student": false,
-//!             "address": {
-//!                 "street": "123 Fake St",
-//!                 "city": "Springfield",
-//!                 "postcode": "12345"
-//!             }
+//!
+//! let json = r#"
+//!    {
+//!         "name": "John Doe",
+//!         "age": 43,
+//!         "is_student": false,
+//!         "address": {
+//!             "street": "123 Fake St",
+//!             "city": "Springfield",
+//!             "postcode": "12345"
 //!         }
-//!     "#;
-//! 
-//!     let person = Person::from_str(json).unwrap();
-//!     println!("{}", person.name);
-//! }
+//!     }
+//! "#;
+//!
+//! let person = Person::from_str(json).unwrap();
+//! println!("{}", person.name);
+//!
 //! ```
 
 use std::{collections::BTreeMap, error::Error, iter::Peekable, str::Chars};
@@ -81,7 +80,7 @@ pub use parser_utils::*;
 /// * `Result<Value, ParseError>` - The parsed JSON value or a [`ParseError`] if the JSON is invalid.
 pub fn from_str(input: &str) -> Result<Value, ParseError> {
     let mut parser = Parser::new(input);
-    return parser.parse()
+    parser.parse()
 }
 
 /// Parse JSON from a file and return a [`Value`].
@@ -94,7 +93,7 @@ pub fn from_str(input: &str) -> Result<Value, ParseError> {
 pub fn from_file(filepath: &str) -> Result<Value, Box<dyn Error>> {
     let input = std::fs::read_to_string(filepath)?;
     let mut parser = Parser::new(&input);
-    return Ok(parser.parse()?)
+    Ok(parser.parse()?)
 }
 
 struct Parser<'a> {
@@ -286,7 +285,7 @@ impl<'a> Parser<'a> {
         self.eat_whitespace();
         let value = self.value()?;
         self.eat_whitespace();
-        return Ok(value);
+        Ok(value)
     }
 
     /// String rule.
@@ -349,7 +348,7 @@ impl<'a> Parser<'a> {
                     .map_err(|_| -> ParseError { (ParseErrorType::InvalidHex, self.col, self.line, hex_string.clone()).into() })?;
 
                 if let Some(c) = char::from_u32(representation) { return Ok(c) }
-                if !(representation >= 0xD800 && representation <= 0xDBFF) { return Err((ParseErrorType::InvalidUnicode, self.col, self.line, hex_string).into()) }
+                if !(0xD800..=0xDBFF).contains(&representation) { return Err((ParseErrorType::InvalidUnicode, self.col, self.line, hex_string).into()) }
 
                 let mut char = self.consume();
                 unexpected_boilerplate!(char, '\\', {}, self.col, self.line);
@@ -366,7 +365,7 @@ impl<'a> Parser<'a> {
                 match char::from_u32(representation2) {
                     Some(char) => Err((ParseErrorType::InvalidSurrogatePair, self.col, self.line, char).into()),
                     None => {
-                        if !(representation2 >= 0xDC00 && representation2 <= 0xDFFF) { return Err((ParseErrorType::InvalidUnicode, self.col, self.line, hex_string).into()) }
+                        if !(0xDC00..=0xDFFF).contains(&representation2) { return Err((ParseErrorType::InvalidUnicode, self.col, self.line, hex_string).into()) }
 
                         let upper = (representation - 0xD800) << 10;
                         let lower = representation2 - 0xDC00;
@@ -418,12 +417,9 @@ impl<'a> Parser<'a> {
     /// Integer rule.
     fn integer(&mut self) -> Result<i128, ParseError> {
         let mut neg = false;
-        match self.input.peek() {
-            Some('-') => {
-                neg = true;
-                _ = self.consume();
-            },
-            _ => {} 
+        if let Some('-') = self.input.peek() {
+            neg = true;
+            _ = self.consume();
         }
 
         match self.input.peek() {
@@ -512,7 +508,7 @@ impl<'a> Parser<'a> {
                 match digits.parse::<i32>() {
                     Ok(i) => {
                         if !pos {
-                            Ok(Some(-10f64.powi(i)))
+                            Ok(Some(-(10f64.powi(i))))
                         } else {
                             Ok(Some(10f64.powi(i)))
                         }

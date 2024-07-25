@@ -4,7 +4,7 @@ use std::{env, fs::{self, File}, io::Write, path::Path};
 fn main() {
     let out = env::var("OUT_DIR").unwrap();
     let dest = Path::new(&out).join("generated_tests.rs");
-    let mut f = File::create(&dest).unwrap();
+    let mut f = File::create(dest).unwrap();
 
     let test_files = fs::read_dir("./tests/test_data/").unwrap();
 
@@ -23,10 +23,9 @@ fn main() {
             continue;
         }
 
-        let succeed;
-        match test_name.chars().nth(0) {
-            Some('n') => succeed = false,
-            Some('y') => succeed = true,
+        let succeed = match test_name.chars().next() {
+            Some('n') => false,
+            Some('y') => true,
             Some('i') => {
                 let test_function = format!(
                     r#"
@@ -43,7 +42,7 @@ fn test_{test_name}() {{
             },
             Some(_) => return,
             None => return,
-        }
+        };
 
         let test_function = format!(
             r#"

@@ -57,7 +57,10 @@ impl From<ValueError> for DeserialiseError {
 
 impl fmt::Display for DeserialiseError {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        write!(f, "{}", self)
+        match self {
+            DeserialiseError::ParseError(e) => write!(f, "{}", e),
+            DeserialiseError::ValueError(e) => write!(f, "{}", e),
+        }
     }
 }
 
@@ -299,7 +302,7 @@ impl TryFromValue for f32 {
 impl TryFromValue for f64 {
     fn try_from_value(value: Value) -> Result<Self, ValueError> {
         match value {
-            Value::Number(Number::Float(f)) => Ok(f as f64),
+            Value::Number(Number::Float(f)) => Ok(f),
             _ => Err((ValueErrorType::IncorrectType, value.value_type().to_string()).into()),
         }
     }
