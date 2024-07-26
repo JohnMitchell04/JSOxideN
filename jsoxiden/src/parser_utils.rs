@@ -1,4 +1,4 @@
-use std::{error::Error, fmt, ops::Index, thread::current};
+use std::{error::Error, fmt, ops::Index};
 
 // If macro_metavar_expr_concat gets stabilised, this macro could be used to generate the boilerplate for the value methods
 // macro_rules! value_boilerplate {
