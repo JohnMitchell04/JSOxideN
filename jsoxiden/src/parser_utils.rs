@@ -1,4 +1,4 @@
-use std::{collections::BTreeMap, error::Error, fmt, ops::Index};
+use std::{error::Error, fmt, ops::Index, thread::current};
 
 // If macro_metavar_expr_concat gets stabilised, this macro could be used to generate the boilerplate for the value methods
 // macro_rules! value_boilerplate {
@@ -170,7 +170,7 @@ pub enum Value {
     Number(Number),
     String(String),
     Array(Vec<Value>),
-    Object(BTreeMap<String, Value>)
+    Object(IndexMap<String, Value>)
 }
 
 impl Value {
@@ -202,7 +202,7 @@ impl Value {
         }
     }
 
-    pub fn as_map(&self) -> Result<&BTreeMap<String, Value>, ValueError> {
+    pub fn as_map(&self) -> Result<&IndexMap<String, Value>, ValueError> {
         match self {
             Value::Object(ref o) => Ok(o),
             _ => Err((ValueErrorType::IncorrectType, self.value_type().to_string()).into()),
@@ -221,7 +221,7 @@ impl Value {
         match self {
             Value::Object(map) => {
                 match map.get(key) {
-                    Some(value) => Ok(value),
+                    Some(value) => Ok(&value),
                     None => Err((ValueErrorType::InvalidKey, key.to_string()).into()),
                 }
             },
@@ -240,7 +240,7 @@ impl Value {
     pub fn remove(&mut self, key: &str) -> Result<Value, ValueError> {
         match self {
             Value::Object(ref mut map) => {
-                match map.remove(key) {
+                match map.shift_remove(key) {
                     Some(value) => Ok(value),
                     None => Err((ValueErrorType::InvalidKey, key.to_string()).into()),
                 }
@@ -258,6 +258,36 @@ impl Value {
             Value::Array(_) => "Array",
             Value::Object(_) => "Object",
         }
+    }
+
+    fn serialise_internal(&self, indent: usize) -> String {
+        let current_indent = "\t".repeat(indent);
+        let next_indent = "\t".repeat(indent + 1);
+
+        match self {
+            Value::Null => "null".to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Number(n) => n.to_string(),
+            Value::String(s) => format!("\"{}\"", s),
+            Value::Array(a) => {
+                let elements = a.iter()
+                    .map(|v| v.serialise_internal(indent + 1))
+                    .collect::<Vec<_>>()
+                    .join(", ");
+                format!("[{}]", elements)
+            },
+            Value::Object(o) => {
+                let entries = o.iter()
+                    .map(|(k, v)| format!("{}\"{}\": {}", next_indent, k, v.serialise_internal(indent + 1)))
+                    .collect::<Vec<_>>()
+                    .join(",\n");
+                format!("{{\n{}\n{}}}", entries, current_indent)
+            },
+        }
+    }
+
+    pub fn serialise(&self) -> String {
+        self.serialise_internal(0)
     }
 }
 
@@ -341,23 +371,9 @@ where
     }
 }
 
-// TODO: Re-write to be prettier
 impl fmt::Display for Value {
     fn fmt(&self, f: &mut fmt::Formatter<'_>) -> fmt::Result {
-        match self {
-            Value::Null => write!(f, "null"),
-            Value::Bool(b) => write!(f, "{}", b),
-            Value::Number(n) => write!(f, "{}", n),
-            Value::String(s) => write!(f, "\"{}\"", s),
-            Value::Array(a) => {
-                let elements = a.iter().map(|v| format!("{}", v)).collect::<Vec<_>>().join(", ");
-                write!(f, "[{}]", elements)
-            },
-            Value::Object(o) => {
-                let entries = o.iter().map(|(k, v)| format!("\"{}\": {}", k, v)).collect::<Vec<_>>().join(",\n");
-                write!(f, "{{{}}}", entries)
-            },
-        }
+        write!(f, "{}", self.serialise())
     }
 }
 
@@ -457,4 +473,5 @@ macro_rules! unexpected_boilerplate {
         }
     };
 }
+use indexmap::IndexMap;
 pub(super) use unexpected_boilerplate;

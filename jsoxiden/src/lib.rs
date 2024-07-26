@@ -65,9 +65,10 @@
 //!
 //! ```
 
-use std::{collections::BTreeMap, error::Error, iter::Peekable, str::Chars};
+use std::{error::Error, iter::Peekable, str::Chars};
 
 pub mod parser_utils;
+use indexmap::IndexMap;
 pub use macros::*;
 pub use parser_utils::*;
 
@@ -78,6 +79,29 @@ pub use parser_utils::*;
 /// 
 /// # Returns:
 /// * `Result<Value, ParseError>` - The parsed JSON value or a [`ParseError`] if the JSON is invalid.
+/// 
+/// **Example:**
+/// 
+/// ```rust
+/// use jsoxiden;
+///
+/// let json = r#"
+///    {
+///         "name": "John Doe",
+///         "age": 43,
+///         "is_student": false,
+///         "address": {
+///             "street": "123 Fake St",
+///             "city": "Springfield",
+///             "postcode": "12345"
+///         }
+///     }
+/// "#;
+/// let value = jsoxiden::from_str(json).unwrap();
+/// let name = value["name"].as_str().unwrap();
+/// assert_eq!(name, "John Doe");
+///
+/// ```
 pub fn from_str(input: &str) -> Result<Value, ParseError> {
     let mut parser = Parser::new(input);
     parser.parse()
@@ -193,7 +217,7 @@ impl<'a> Parser<'a> {
         match char {
             Some('}') => {
                 _ = self.consume();
-                return Ok(Value::Object(BTreeMap::new()))
+                return Ok(Value::Object(IndexMap::new()))
             },
             Some(_) => value = self.members()?,
             None => return Err((ParseErrorType::UnexpectedEOF, self.col, self.line).into()),
@@ -207,7 +231,7 @@ impl<'a> Parser<'a> {
 
     /// Members rule.
     fn members(&mut self) -> Result<Value, ParseError> {
-        let mut map =  BTreeMap::new();
+        let mut map =  IndexMap::new();
         loop {
             let (key, value) = self.member()?;
 
