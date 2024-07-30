@@ -24,7 +24,6 @@
 //! let value = jsoxiden::from_str(json).unwrap();
 //! let name = value["name"].as_str().unwrap();
 //! println!("{}", name);
-//!
 //! ```
 //! 
 //! Parsing and accessing via [`Deserialise`]:
@@ -62,15 +61,56 @@
 //!
 //! let person = Person::from_str(json).unwrap();
 //! println!("{}", person.name);
-//!
 //! ```
+//! 
+//! Using [`Serialise`] to print out a struct in JSON format:
+//! ```rust
+//! use jsoxiden::{Deserialise, Serialise};
+//! 
+//! #[derive(Deserialise, Serialise)]
+//! struct Address {
+//!     street: String,
+//!     city: String,
+//!     postcode: String,
+//! }
+//! 
+//! #[derive(Deserialise, Serialise)]
+//! struct Person {
+//!     name: String,
+//!     age: i32,
+//!     is_student: bool,
+//!     address: Address,
+//! }
+//! 
+//!
+//! let json = r#"
+//!    {
+//!         "name": "John Doe",
+//!         "age": 43,
+//!         "is_student": false,
+//!         "address": {
+//!             "street": "123 Fake St",
+//!             "city": "Springfield",
+//!             "postcode": "12345"
+//!         }
+//!     }
+//! "#;
+//!
+//! let person = Person::from_str(json).unwrap();
+//! println!("{}", person.to_json_string());
+//! ```
+
+// TODO: Allow the user to decide whether they want to use IndexMap or a normal BtreeMap
 
 use std::{error::Error, iter::Peekable, str::Chars};
 
 pub mod parser_utils;
-use indexmap::IndexMap;
+pub mod value;
 pub use macros::*;
 pub use parser_utils::*;
+pub use value::*;
+
+use indexmap::IndexMap;
 
 /// Parse a JSON string and return a [`Value`].
 /// 
