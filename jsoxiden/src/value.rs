@@ -163,28 +163,6 @@ impl From<(ValueErrorType, String)> for ValueError {
     }
 }
 
-/// A trait that indicates the type can be deserialised from a JSON string.
-pub trait Deserialise {
-
-    /// Deserialise a JSON string into the desired type.
-    /// 
-    /// # Arguments:
-    /// * `input` - The JSON string to deserialise.
-    /// 
-    /// # Returns:
-    /// The deserialised value or a [`DeserialiseError`].
-    fn from_str(input: &str) -> Result<Self, DeserialiseError> where Self: Sized;
-}
-
-/// A trait indicating that the type can be serialised into a JSON string.
-pub trait Serialise {
-    /// Consume and serialise a struct into the desired type.
-    /// 
-    /// # Returns:
-    /// The serialised JSON string.
-    fn to_json_string(self) -> String;
-}
-
 /// All possible JSON value types.
 #[derive(Debug, Clone)]
 pub enum Value {
